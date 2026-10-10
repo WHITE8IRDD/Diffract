@@ -1,0 +1,572 @@
+/**
+ * PixiEngine — WebGPU-first canvas compositor.
+ *
+ * Architecture
+ * ------------
+ *   Application (WebGPU preferred, WebGL2 fallback)
+ *     └─ stage
+ *         ├─ checkerboard   (transparency backdrop, screen-space)
+ *         └─ world          (pan + zoom transform)
+ *             └─ docRoot    (per-document origin)
+ *                 └─ layer sprites (bottom → top), each with blend/opacity/mask
+ *
+ * Performance rules that hold from Phase 1 onwards:
+ *  * **Render on demand** — the ticker is stopped; `requestRender()` batches a
+ *    single `renderer.render()` per animation frame. Idle CPU usage ≈ 0,
+ *    which keeps the "< 200 MB idle RAM / fast launch" budgets honest.
+ *  * **Texture upload on dirty only** — brush strokes mark their surface
+ *    dirty; the engine re-uploads at most once per frame.
+ *  * **One container per document** — switching tabs toggles visibility, so
+ *    pan/zoom state is preserved per document.
+ *
+ * WebGPU gives the raw throughput for 8K pan/zoom; the same scene graph runs
+ * on WebGL2 when WebGPU is unavailable (the fallback is automatic).
+ */
+
+import {
+  Application,
+  Container,
+  Graphics,
+  Rectangle,
+  Sprite,
+  Texture,
+  TilingSprite,
+  type BLEND_MODES,
+} from "pixi.js";
+import type { DocumentState } from "@/store/types";
+import type { BlendModeId } from "@/utils/blendModes";
+import type { MaskSurface, PixelSnapshot, RasterSurface } from "./types";
+import { clamp } from "@/utils/math";
+
+/** Zoom limits (Photoshop-like): 0.1 % … 3200 %. */
+export const MIN_ZOOM = 0.001;
+export const MAX_ZOOM = 32;
+
+/**
+ * Diffract blend ids → PixiJS blend modes.
+ *
+ * PixiJS v8 models blend modes as string-literal types; our ids happen to
+ * match its spellings exactly, so the map is explicit but trivial. Phase 2
+ * extends both tables with the full Photoshop set.
+ */
+const BLEND_MAP: Record<BlendModeId, BLEND_MODES> = {
+  normal: "normal",
+  multiply: "multiply",
+  screen: "screen",
+  overlay: "overlay",
+  "soft-light": "soft-light",
+  "hard-light": "hard-light",
+  "color-dodge": "color-dodge",
+  "color-burn": "color-burn",
+  difference: "difference",
+};
+
+interface DocRoot {
+  id: string;
+  container: Container;
+  /** Checkerboard + artboard outline, sized to the document. */
+  backdrop: TilingSprite;
+  frame: Graphics;
+  surfaces: Map<string, RasterSurface>;
+  width: number;
+  height: number;
+}
+
+export interface EngineEvents {
+  onZoomChange?: (zoom: number) => void;
+  onPointerDocMove?: (x: number, y: number, inside: boolean) => void;
+}
+
+export class PixiEngine {
+  readonly app = new Application();
+  ready = false;
+
+  /** Screen-space pan (CSS px) and zoom. */
+  private panX = 0;
+  private panY = 0;
+  private zoom = 1;
+
+  private world = new Container();
+  private docs = new Map<string, DocRoot>();
+  private activeDocId: string | null = null;
+  private renderQueued = false;
+  private events: EngineEvents = {};
+  private checkerTile: Texture | null = null;
+
+  // ── lifecycle ──────────────────────────────────────────────────────────
+
+  async init(canvas: HTMLCanvasElement, events: EngineEvents = {}): Promise<void> {
+    this.events = events;
+    await this.app.init({
+      canvas,
+      preference: "webgpu",
+      backgroundAlpha: 0,
+      antialias: false,
+      autoDensity: true,
+      resolution: Math.min(window.devicePixelRatio || 1, 2),
+      powerPreference: "high-performance",
+    });
+    this.app.stage.addChild(this.world);
+    this.app.stage.sortableChildren = false;
+    // On-demand rendering: stop the ticker, render explicitly.
+    this.app.ticker.stop();
+    this.ready = true;
+    this.requestRender();
+  }
+
+  destroy(): void {
+    for (const doc of this.docs.values()) this.destroyDocRoot(doc);
+    this.docs.clear();
+    this.app.destroy(true, { children: true });
+    this.ready = false;
+  }
+
+  // ── viewport ───────────────────────────────────────────────────────────
+
+  resize(width: number, height: number): void {
+    if (!this.ready) return;
+    this.app.renderer.resize(width, height);
+    this.applyTransform();
+  }
+
+  getZoom(): number {
+    return this.zoom;
+  }
+
+  setZoom(zoom: number, anchorScreen?: { x: number; y: number }): void {
+    const next = clamp(zoom, MIN_ZOOM, MAX_ZOOM);
+    const anchor = anchorScreen ?? {
+      x: this.app.renderer.width / (this.app.renderer.resolution || 1) / 2,
+      y: this.app.renderer.height / (this.app.renderer.resolution || 1) / 2,
+    };
+    // Keep the anchor point stationary on screen.
+    this.panX = anchor.x - ((anchor.x - this.panX) * next) / this.zoom;
+    this.panY = anchor.y - ((anchor.y - this.panY) * next) / this.zoom;
+    this.zoom = next;
+    this.applyTransform();
+    this.events.onZoomChange?.(this.zoom);
+    this.requestRender();
+  }
+
+  zoomBy(factor: number, anchorScreen?: { x: number; y: number }): void {
+    this.setZoom(this.zoom * factor, anchorScreen);
+  }
+
+  setPan(x: number, y: number): void {
+    this.panX = x;
+    this.panY = y;
+    this.applyTransform();
+    this.requestRender();
+  }
+
+  panBy(dx: number, dy: number): void {
+    this.setPan(this.panX + dx, this.panY + dy);
+  }
+
+  getPan(): { x: number; y: number } {
+    return { x: this.panX, y: this.panY };
+  }
+
+  /** Fit the active document to the viewport with margin. */
+  fitToScreen(margin = 48): void {
+    const doc = this.activeDocRoot();
+    if (!doc) return;
+    const vw = this.viewportWidth();
+    const vh = this.viewportHeight();
+    const z = clamp(
+      Math.min((vw - margin * 2) / doc.width, (vh - margin * 2) / doc.height),
+      MIN_ZOOM,
+      1,
+    );
+    this.zoom = z;
+    this.panX = (vw - doc.width * z) / 2;
+    this.panY = (vh - doc.height * z) / 2;
+    this.applyTransform();
+    this.events.onZoomChange?.(this.zoom);
+    this.requestRender();
+  }
+
+  /** Viewport size in CSS pixels. */
+  viewportWidth(): number {
+    return this.app.renderer.width / (this.app.renderer.resolution || 1);
+  }
+  viewportHeight(): number {
+    return this.app.renderer.height / (this.app.renderer.resolution || 1);
+  }
+
+  /** Screen (CSS px) → document coordinates. */
+  screenToDoc(x: number, y: number): { x: number; y: number } {
+    return { x: (x - this.panX) / this.zoom, y: (y - this.panY) / this.zoom };
+  }
+
+  docToScreen(x: number, y: number): { x: number; y: number } {
+    return { x: x * this.zoom + this.panX, y: y * this.zoom + this.panY };
+  }
+
+  // ── documents & layers ─────────────────────────────────────────────────
+
+  /** Make `docId` the visible document (others are hidden). */
+  setActiveDocument(docId: string | null): void {
+    this.activeDocId = docId;
+    for (const [id, root] of this.docs) root.container.visible = id === docId;
+    this.requestRender();
+  }
+
+  /** Allocate the pixel surface for a new layer. */
+  createLayerSurface(
+    doc: DocumentState,
+    layerId: string,
+    fill: "white" | "transparent",
+  ): void {
+    const root = this.docs.get(doc.id) ?? this.createDocRoot(doc);
+    if (root.surfaces.has(layerId)) return;
+
+    const surface = this.makeSurface(layerId, root.width, root.height);
+    if (fill === "white") {
+      surface.ctx.fillStyle = "#ffffff";
+      surface.ctx.fillRect(0, 0, root.width, root.height);
+      surface.dirty = true;
+    }
+    root.surfaces.set(layerId, surface);
+    root.container.addChildAt(surface.sprite, 2); // above checker + frame
+    this.requestRender();
+  }
+
+  deleteLayerSurface(layerId: string): void {
+    for (const root of this.docs.values()) {
+      const surface = root.surfaces.get(layerId);
+      if (!surface) continue;
+      root.container.removeChild(surface.sprite);
+      surface.sprite.destroy();
+      surface.texture.destroy(true);
+      if (surface.mask) {
+        surface.sprite.mask = null;
+        surface.mask.sprite.destroy();
+        surface.mask.texture.destroy(true);
+      }
+      root.surfaces.delete(layerId);
+    }
+    this.requestRender();
+  }
+
+  duplicateLayerSurface(sourceId: string, targetId: string): void {
+    for (const root of this.docs.values()) {
+      const source = root.surfaces.get(sourceId);
+      if (!source) continue;
+      const copy = this.makeSurface(targetId, root.width, root.height);
+      copy.ctx.drawImage(source.canvas, 0, 0);
+      copy.dirty = true;
+      root.surfaces.set(targetId, copy);
+      root.container.addChildAt(copy.sprite, 2);
+    }
+    this.requestRender();
+  }
+
+  getSurface(layerId: string): RasterSurface | null {
+    for (const root of this.docs.values()) {
+      const s = root.surfaces.get(layerId);
+      if (s) return s;
+    }
+    return null;
+  }
+
+  /** Mark a layer's pixels dirty (re-upload on next frame). */
+  markDirty(layerId: string): void {
+    const surface = this.getSurface(layerId);
+    if (surface) {
+      surface.dirty = true;
+      this.requestRender();
+    }
+  }
+
+  createMaskSurface(layerId: string, maskId: string): void {
+    const surface = this.getSurface(layerId);
+    if (!surface || surface.mask) return;
+    const mask = this.makeMask(maskId, surface.width, surface.height);
+    // White = fully visible initially.
+    mask.ctx.fillStyle = "#ffffff";
+    mask.ctx.fillRect(0, 0, surface.width, surface.height);
+    mask.dirty = true;
+    surface.mask = mask;
+    surface.sprite.mask = mask.sprite;
+    surface.sprite.parent?.addChild(mask.sprite);
+    this.requestRender();
+  }
+
+  deleteMaskSurface(layerId: string): void {
+    const surface = this.getSurface(layerId);
+    if (!surface?.mask) return;
+    surface.sprite.mask = null;
+    surface.mask.sprite.parent?.removeChild(surface.mask.sprite);
+    surface.mask.sprite.destroy();
+    surface.mask.texture.destroy(true);
+    surface.mask = null;
+    this.requestRender();
+  }
+
+  destroyDocument(docId: string): void {
+    const root = this.docs.get(docId);
+    if (!root) return;
+    this.destroyDocRoot(root);
+    this.docs.delete(docId);
+    if (this.activeDocId === docId) this.activeDocId = null;
+    this.requestRender();
+  }
+
+  // ── sync from the document store ───────────────────────────────────────
+
+  /**
+   * Reconcile the Pixi scene with the store's layer stack:
+   * z-order, blend mode, opacity, visibility, locks.
+   * Cheap enough to run after every store change (metadata only).
+   */
+  syncLayerOrderAndProps(
+    docId: string,
+    layers: {
+      id: string;
+      visible: boolean;
+      opacity: number;
+      blendMode: BlendModeId;
+    }[],
+  ): void {
+    const root = this.docs.get(docId);
+    if (!root) return;
+    let z = 2; // above checker + frame
+    for (const layer of layers) {
+      const surface = root.surfaces.get(layer.id);
+      if (!surface) continue;
+      root.container.setChildIndex(surface.sprite, z++);
+      surface.sprite.visible = layer.visible;
+      surface.sprite.alpha = layer.opacity;
+      surface.sprite.blendMode = BLEND_MAP[layer.blendMode] ?? "normal";
+    }
+    this.requestRender();
+  }
+
+  // ── export ─────────────────────────────────────────────────────────────
+
+  /**
+   * Flatten the document to an offscreen canvas (CPU composite using the same
+   * blend/opacity rules as the GPU path). Used by Export As ▸ PNG/JPEG/WebP.
+   */
+  compositeToCanvas(docId: string): HTMLCanvasElement | null {
+    const root = this.docs.get(docId);
+    if (!root) return null;
+    const out = document.createElement("canvas");
+    out.width = root.width;
+    out.height = root.height;
+    const ctx = out.getContext("2d");
+    if (!ctx) return null;
+
+    // Bottom → top is child order after index 2.
+    for (const layer of this.layersBottomToTop(root)) {
+      const surface = root.surfaces.get(layer.id);
+      if (!surface || !layer.visible) continue;
+      ctx.globalAlpha = layer.opacity;
+      const cssBlend = blendCssName(layer.blendMode);
+      ctx.globalCompositeOperation =
+        cssBlend === "normal" ? "source-over" : (cssBlend as GlobalCompositeOperation);
+      ctx.drawImage(surface.canvas, 0, 0);
+    }
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = "source-over";
+    return out;
+  }
+
+  /** Snapshot a single layer's pixels (history). */
+  captureSnapshot(layerId: string): PixelSnapshot | null {
+    const surface = this.getSurface(layerId);
+    if (!surface) return null;
+    return {
+      imageData: surface.ctx.getImageData(0, 0, surface.width, surface.height),
+    };
+  }
+
+  /** Restore a snapshot (history undo/redo). */
+  restoreSnapshot(layerId: string, snapshot: PixelSnapshot): void {
+    const surface = this.getSurface(layerId);
+    if (!surface) return;
+    surface.ctx.putImageData(snapshot.imageData, 0, 0);
+    surface.dirty = true;
+    this.requestRender();
+  }
+
+  // ── rendering ──────────────────────────────────────────────────────────
+
+  /** Schedule a render for the next animation frame (coalesced). */
+  requestRender(): void {
+    if (!this.ready || this.renderQueued) return;
+    this.renderQueued = true;
+    requestAnimationFrame(() => {
+      this.renderQueued = false;
+      if (!this.ready) return;
+      this.uploadDirty();
+      this.app.render();
+    });
+  }
+
+  private uploadDirty(): void {
+    for (const root of this.docs.values()) {
+      for (const surface of root.surfaces.values()) {
+        if (surface.dirty) {
+          surface.texture.source.update();
+          surface.dirty = false;
+        }
+        if (surface.mask?.dirty) {
+          surface.mask.texture.source.update();
+          surface.mask.dirty = false;
+        }
+      }
+    }
+  }
+
+  private applyTransform(): void {
+    this.world.scale.set(this.zoom);
+    this.world.position.set(this.panX, this.panY);
+  }
+
+  // ── internals ──────────────────────────────────────────────────────────
+
+  private activeDocRoot(): DocRoot | null {
+    return this.activeDocId ? (this.docs.get(this.activeDocId) ?? null) : null;
+  }
+
+  private layersBottomToTop(
+    root: DocRoot,
+  ): { id: string; visible: boolean; opacity: number; blendMode: BlendModeId }[] {
+    // Child order after index 2 encodes z-order; reconstruct descriptors from
+    // the sprites we manage.
+    const out: {
+      id: string;
+      visible: boolean;
+      opacity: number;
+      blendMode: BlendModeId;
+    }[] = [];
+    root.container.children.forEach((child, i) => {
+      if (i < 2) return;
+      for (const [id, surface] of root.surfaces) {
+        if (surface.sprite === child) {
+          out.push({
+            id,
+            visible: child.visible,
+            opacity: child.alpha,
+            blendMode: blendModeFromPixi(child.blendMode),
+          });
+        }
+      }
+    });
+    return out;
+  }
+
+  private createDocRoot(doc: DocumentState): DocRoot {
+    const container = new Container();
+    this.world.addChild(container);
+
+    const checker = this.checkerTexture();
+    // 16 px checker tile at natural scale (tileScale defaults to 1).
+    const backdrop = new TilingSprite({
+      texture: checker,
+      width: doc.width,
+      height: doc.height,
+    });
+    container.addChild(backdrop);
+
+    const frame = new Graphics()
+      .rect(0, 0, doc.width, doc.height)
+      .stroke({ width: 1, color: 0x505050, alpha: 1 });
+    container.addChild(frame);
+
+    const root: DocRoot = {
+      id: doc.id,
+      container,
+      backdrop,
+      frame,
+      surfaces: new Map(),
+      width: doc.width,
+      height: doc.height,
+    };
+    this.docs.set(doc.id, root);
+    container.visible = doc.id === this.activeDocId;
+    return root;
+  }
+
+  private destroyDocRoot(root: DocRoot): void {
+    for (const surface of root.surfaces.values()) {
+      surface.sprite.destroy();
+      surface.texture.destroy(true);
+      if (surface.mask) {
+        surface.mask.sprite.destroy();
+        surface.mask.texture.destroy(true);
+      }
+    }
+    root.surfaces.clear();
+    root.backdrop.destroy();
+    root.frame.destroy();
+    root.container.destroy({ children: true });
+  }
+
+  private makeSurface(
+    id: string,
+    width: number,
+    height: number,
+  ): RasterSurface {
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+    const texture = Texture.from(canvas);
+    texture.source.scaleMode = "nearest";
+    const sprite = new Sprite(texture);
+    sprite.width = width;
+    sprite.height = height;
+    return { id, width, height, canvas, ctx, texture, sprite, dirty: true, mask: null };
+  }
+
+  private makeMask(id: string, width: number, height: number): MaskSurface {
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+    const texture = Texture.from(canvas);
+    texture.source.scaleMode = "nearest";
+    const sprite = new Sprite(texture);
+    sprite.width = width;
+    sprite.height = height;
+    return { id, canvas, ctx, texture, sprite, dirty: true };
+  }
+
+  /** 16 px checker tile texture (generated once). */
+  private checkerTexture(): Texture {
+    if (this.checkerTile) return this.checkerTile;
+    const tile = document.createElement("canvas");
+    tile.width = 16;
+    tile.height = 16;
+    const ctx = tile.getContext("2d")!;
+    ctx.fillStyle = "#2e2e2e";
+    ctx.fillRect(0, 0, 16, 16);
+    ctx.fillStyle = "#232323";
+    ctx.fillRect(0, 0, 8, 8);
+    ctx.fillRect(8, 8, 8, 8);
+    this.checkerTile = Texture.from(tile);
+    return this.checkerTile;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// blend helpers
+// ---------------------------------------------------------------------------
+
+function blendCssName(mode: BlendModeId): string {
+  return mode === "normal" ? "normal" : mode;
+}
+
+function blendModeFromPixi(mode: BLEND_MODES): BlendModeId {
+  const found = (Object.entries(BLEND_MAP) as [BlendModeId, BLEND_MODES][]).find(
+    ([, v]) => v === mode,
+  );
+  return found?.[0] ?? "normal";
+}
+
+// Re-export for callers that only need the type.
+export type { RasterSurface, PixelSnapshot, MaskSurface };
+export { Rectangle };
