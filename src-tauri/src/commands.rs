@@ -21,8 +21,8 @@ pub enum CommandError {
 
 type CmdResult<T> = Result<T, String>;
 
-fn to_string_err(e: CommandError) -> String {
-    e.to_string()
+fn to_string_err<E: Into<CommandError>>(e: E) -> String {
+    e.into().to_string()
 }
 
 // ---------------------------------------------------------------------------
