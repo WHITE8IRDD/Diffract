@@ -13,6 +13,8 @@ import type { Tool, ToolId } from "./types";
 import { MoveTool } from "./MoveTool";
 import { BrushTool } from "./BrushTool";
 import { HandTool, ZoomTool, EyedropperTool } from "./ViewTools";
+import { RectMarqueeTool } from "./SelectionTools";
+import { PaintBucketTool, GradientTool } from "./FillTools";
 
 /** Placeholder for tools whose interaction ships in the next phase step. */
 export class PlaceholderTool implements Tool {
@@ -66,12 +68,12 @@ register(new ZoomTool());
 register(new EyedropperTool());
 
 // Phase 1 step-2 placeholders (real implementations follow the plan order).
-register(new PlaceholderTool("marquee-rect", "Rectangular Marquee Tool", "crosshair"));
+register(new RectMarqueeTool());
 register(new PlaceholderTool("marquee-ellipse", "Elliptical Marquee Tool", "crosshair"));
 register(new PlaceholderTool("lasso", "Lasso Tool", "crosshair"));
 register(new PlaceholderTool("polygon-lasso", "Polygonal Lasso Tool", "crosshair"));
-register(new PlaceholderTool("paint-bucket", "Paint Bucket Tool", "crosshair"));
-register(new PlaceholderTool("gradient", "Gradient Tool", "crosshair"));
+register(new PaintBucketTool());
+register(new GradientTool());
 register(new PlaceholderTool("crop", "Crop Tool", "crosshair"));
 register(new PlaceholderTool("text", "Horizontal Type Tool", "text"));
 

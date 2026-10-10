@@ -6,6 +6,7 @@ import { FilePlus2, FolderOpen, Sparkles } from "lucide-react";
 import { Logo } from "@/components/icons/Logo";
 import { Button } from "@/components/ui/button";
 import { useUIStore } from "@/store/useUIStore";
+import { openImageAsDocument } from "@/io/openImage";
 
 export function EmptyState() {
   const openDialog = useUIStore((s) => s.openDialog);
@@ -28,7 +29,7 @@ export function EmptyState() {
           New document
           <kbd className="ml-1 rounded-sm bg-black/15 px-1 text-[10px]">Ctrl+N</kbd>
         </Button>
-        <Button variant="secondary" onClick={() => openDialog("newDocument")}>
+        <Button variant="secondary" onClick={() => void openImageAsDocument()}>
           <FolderOpen className="h-3.5 w-3.5" />
           Open image
         </Button>

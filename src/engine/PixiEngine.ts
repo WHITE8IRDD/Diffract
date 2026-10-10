@@ -35,7 +35,8 @@ import {
 } from "pixi.js";
 import type { DocumentState } from "@/store/types";
 import type { BlendModeId } from "@/utils/blendModes";
-import type { MaskSurface, PixelSnapshot, RasterSurface } from "./types";
+import type { MaskSurface, RasterSurface } from "./types";
+import { clipRect, type PixelRect, type PixelSnapshot } from "./snapshot";
 import { clamp } from "@/utils/math";
 
 /** Zoom limits (Photoshop-like): 0.1 % … 3200 %. */
@@ -70,6 +71,8 @@ interface DocRoot {
   surfaces: Map<string, RasterSurface>;
   width: number;
   height: number;
+  /** Dashed selection outline (drawn above layers). */
+  selection: Graphics | null;
 }
 
 export interface EngineEvents {
@@ -80,6 +83,8 @@ export interface EngineEvents {
 export class PixiEngine {
   readonly app = new Application();
   ready = false;
+  private disposed = false;
+  private initPromise: Promise<void> | null = null;
 
   /** Screen-space pan (CSS px) and zoom. */
   private panX = 0;
@@ -97,6 +102,11 @@ export class PixiEngine {
 
   async init(canvas: HTMLCanvasElement, events: EngineEvents = {}): Promise<void> {
     this.events = events;
+    this.initPromise = this.start(canvas);
+    return this.initPromise;
+  }
+
+  private async start(canvas: HTMLCanvasElement): Promise<void> {
     await this.app.init({
       canvas,
       preference: "webgpu",
@@ -106,6 +116,12 @@ export class PixiEngine {
       resolution: Math.min(window.devicePixelRatio || 1, 2),
       powerPreference: "high-performance",
     });
+    // destroy() ran while the renderer was still starting up (React StrictMode
+    // unmounts/remounts effects in dev). Tear down now that it is safe to do so.
+    if (this.disposed) {
+      this.teardown();
+      return;
+    }
     this.app.stage.addChild(this.world);
     this.app.stage.sortableChildren = false;
     // On-demand rendering: stop the ticker, render explicitly.
@@ -115,9 +131,24 @@ export class PixiEngine {
   }
 
   destroy(): void {
+    this.disposed = true;
+    this.ready = false;
+    if (!this.initPromise) {
+      this.teardown();
+      return;
+    }
+    // Calling app.destroy() before app.init() settles throws (the renderer's
+    // resize plugin is not attached yet), so defer teardown until it has.
+    void this.initPromise
+      .catch(() => undefined)
+      .then(() => this.teardown());
+  }
+
+  private teardown(): void {
     for (const doc of this.docs.values()) this.destroyDocRoot(doc);
     this.docs.clear();
-    this.app.destroy(true, { children: true });
+    // The <canvas> is owned by React — keep it in the DOM (removeView: false).
+    this.app.destroy({ removeView: false }, { children: true });
     this.ready = false;
   }
 
@@ -313,6 +344,25 @@ export class PixiEngine {
     this.requestRender();
   }
 
+  /** Draw (or clear, with `null`) the marching-ants selection outline. */
+  setSelectionOverlay(docId: string, rect: PixelRect | null): void {
+    const root = this.docs.get(docId);
+    if (!root) return;
+    if (!root.selection) {
+      root.selection = new Graphics();
+      root.container.addChild(root.selection);
+    }
+    const g = root.selection;
+    g.clear();
+    if (rect && rect.w > 0 && rect.h > 0) {
+      const line = 1 / this.zoom; // stays 1 screen pixel wide at 100 %
+      // Dashed outline: white dashes over a dark base so it reads on any pixels.
+      strokeDashedRect(g, rect, 6 / this.zoom, { width: line * 2, color: 0x000000, alpha: 0.55 });
+      strokeDashedRect(g, rect, 6 / this.zoom, { width: line, color: 0xffffff, alpha: 0.95 });
+    }
+    this.requestRender();
+  }
+
   // ── sync from the document store ───────────────────────────────────────
 
   /**
@@ -373,12 +423,23 @@ export class PixiEngine {
     return out;
   }
 
-  /** Snapshot a single layer's pixels (history). */
-  captureSnapshot(layerId: string): PixelSnapshot | null {
+  /**
+   * Snapshot a layer's pixels (history). Pass `rect` to capture only that
+   * area — brush strokes do this so history stays small.
+   */
+  captureSnapshot(layerId: string, rect?: PixelRect): PixelSnapshot | null {
     const surface = this.getSurface(layerId);
     if (!surface) return null;
+    const r = clipRect(
+      rect ?? { x: 0, y: 0, w: surface.width, h: surface.height },
+      surface.width,
+      surface.height,
+    );
+    if (r.w <= 0 || r.h <= 0) return null;
     return {
-      imageData: surface.ctx.getImageData(0, 0, surface.width, surface.height),
+      x: r.x,
+      y: r.y,
+      imageData: surface.ctx.getImageData(r.x, r.y, r.w, r.h),
     };
   }
 
@@ -386,9 +447,51 @@ export class PixiEngine {
   restoreSnapshot(layerId: string, snapshot: PixelSnapshot): void {
     const surface = this.getSurface(layerId);
     if (!surface) return;
-    surface.ctx.putImageData(snapshot.imageData, 0, 0);
+    surface.ctx.putImageData(snapshot.imageData, snapshot.x, snapshot.y);
     surface.dirty = true;
     this.requestRender();
+  }
+
+  /**
+   * Visually offset a layer while a Move drag is in progress. Pixels are not
+   * changed; the offset is applied on commit (see MoveTool).
+   */
+  setLayerOffset(layerId: string, dx: number, dy: number): void {
+    const surface = this.getSurface(layerId);
+    if (!surface) return;
+    surface.sprite.position.set(dx, dy);
+    this.requestRender();
+  }
+
+  /**
+   * Colour of the flattened document at one pixel (Eyedropper). Composites
+   * just that pixel across visible layers instead of the whole document.
+   */
+  sampleComposite(
+    docId: string,
+    x: number,
+    y: number,
+  ): { r: number; g: number; b: number; a: number } | null {
+    const root = this.docs.get(docId);
+    if (!root) return null;
+    const px = Math.min(root.width - 1, Math.max(0, Math.round(x)));
+    const py = Math.min(root.height - 1, Math.max(0, Math.round(y)));
+    const probe = document.createElement("canvas");
+    probe.width = 1;
+    probe.height = 1;
+    const ctx = probe.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return null;
+    for (const layer of this.layersBottomToTop(root)) {
+      const surface = root.surfaces.get(layer.id);
+      if (!surface || !layer.visible) continue;
+      ctx.globalAlpha = layer.opacity;
+      const cssBlend = blendCssName(layer.blendMode);
+      ctx.globalCompositeOperation =
+        cssBlend === "normal" ? "source-over" : (cssBlend as GlobalCompositeOperation);
+      ctx.drawImage(surface.canvas, px, py, 1, 1, 0, 0, 1, 1);
+    }
+    const d = ctx.getImageData(0, 0, 1, 1).data;
+    return { r: d[0] ?? 0, g: d[1] ?? 0, b: d[2] ?? 0, a: (d[3] ?? 0) / 255 };
   }
 
   // ── rendering ──────────────────────────────────────────────────────────
@@ -484,6 +587,7 @@ export class PixiEngine {
       surfaces: new Map(),
       width: doc.width,
       height: doc.height,
+      selection: null,
     };
     this.docs.set(doc.id, root);
     container.visible = doc.id === this.activeDocId;
@@ -550,6 +654,36 @@ export class PixiEngine {
     this.checkerTile = Texture.from(tile);
     return this.checkerTile;
   }
+}
+
+/** Dashed rectangle outline (Pixi Graphics has no dash style). */
+function strokeDashedRect(
+  g: Graphics,
+  r: PixelRect,
+  dash: number,
+  style: { width: number; color: number; alpha: number },
+): void {
+  const x0 = r.x;
+  const y0 = r.y;
+  const x1 = r.x + r.w;
+  const y1 = r.y + r.h;
+  const edges: [number, number, number, number][] = [
+    [x0, y0, x1, y0],
+    [x1, y0, x1, y1],
+    [x1, y1, x0, y1],
+    [x0, y1, x0, y0],
+  ];
+  for (const [ax, ay, bx, by] of edges) {
+    const len = Math.hypot(bx - ax, by - ay);
+    if (len === 0) continue;
+    const ux = (bx - ax) / len;
+    const uy = (by - ay) / len;
+    for (let d = 0; d < len; d += dash * 2) {
+      const e = Math.min(d + dash, len);
+      g.moveTo(ax + ux * d, ay + uy * d).lineTo(ax + ux * e, ay + uy * e);
+    }
+  }
+  g.stroke(style);
 }
 
 // ---------------------------------------------------------------------------

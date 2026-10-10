@@ -11,7 +11,9 @@ import type { MenuActionId } from "@/components/layout/menuData";
 import { useUIStore } from "@/store/useUIStore";
 import { useDocumentStore } from "@/store/useDocumentStore";
 import { useHistoryStore } from "@/store/useHistoryStore";
+import { useSelectionStore } from "@/store/useSelectionStore";
 import { getEngine } from "@/engine/registry";
+import { openImageAsDocument } from "@/io/openImage";
 
 export interface AppCommands {
   run: (id: MenuActionId) => void;
@@ -31,9 +33,11 @@ export function useAppCommands(): AppCommands {
         ui.openDialog("newDocument");
         break;
       case "file.open":
+        void openImageAsDocument();
+        break;
       case "file.openRecent":
-        // Native picker + Rust decode lands with Phase 1 step 2 (file I/O).
-        console.info(`[cmd] ${id} — wired to the Rust image pipeline in Phase 1 step 2`);
+        // Recent-files list needs persistence; not implemented yet.
+        console.info(`[cmd] ${id} — recent files not implemented yet`);
         break;
       case "file.save":
       case "file.saveAs":
@@ -113,7 +117,11 @@ export function useAppCommands(): AppCommands {
 
       // ── Select ─────────────────────────────────────────────────────────
       case "select.all":
+        if (doc) useSelectionStore.getState().setSelection(doc.id, { x: 0, y: 0, w: doc.width, h: doc.height });
+        break;
       case "select.deselect":
+        if (doc) useSelectionStore.getState().setSelection(doc.id, null);
+        break;
       case "select.inverse":
       case "select.colorRange":
       case "select.expand":

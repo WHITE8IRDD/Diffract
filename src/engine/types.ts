@@ -35,7 +35,4 @@ export interface MaskSurface {
   dirty: boolean;
 }
 
-/** Snapshot of a surface's pixels, used by history entries. */
-export interface PixelSnapshot {
-  imageData: ImageData;
-}
+export type { PixelSnapshot, PixelRect } from "./snapshot";

@@ -6,6 +6,7 @@
  * it (multi-level undo), and the redo stack is shown grayed below.
  */
 
+import { useMemo } from "react";
 import { History, Redo2, Undo2 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useDocumentStore } from "@/store/useDocumentStore";
@@ -15,11 +16,17 @@ import { cn } from "@/utils/cn";
 
 export function HistoryPanel() {
   const docId = useDocumentStore((s) => s.activeDocumentId);
-  const undoLabels = useHistoryStore((s) =>
-    docId ? s.undoLabels(docId) : [],
+  // Select the stored per-document history (a stable reference) and derive the
+  // label lists in render. `s.undoLabels()` builds a new array on every call,
+  // which would make the subscription re-render forever.
+  const history = useHistoryStore((s) => (docId ? s.byDocument[docId] : undefined));
+  const undoLabels = useMemo(
+    () => (history ? [...history.undoStack].reverse().map((e) => e.label) : []),
+    [history],
   );
-  const redoLabels = useHistoryStore((s) =>
-    docId ? s.redoLabels(docId) : [],
+  const redoLabels = useMemo(
+    () => (history ? [...history.redoStack].reverse().map((e) => e.label) : []),
+    [history],
   );
   const undo = useHistoryStore((s) => s.undo);
   const redo = useHistoryStore((s) => s.redo);

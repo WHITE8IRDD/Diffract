@@ -61,17 +61,6 @@ pub struct SaveResult {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct OpenedImage {
-    pub width: u32,
-    pub height: u32,
-    /// RGBA8 pixels, row-major.
-    pub pixels: Vec<u8>,
-    /// Detected colour mode (RGB/Gray → RGB8 in Phase 1).
-    pub color_mode: String,
-}
-
 // ---------------------------------------------------------------------------
 // Commands
 // ---------------------------------------------------------------------------
@@ -122,19 +111,23 @@ fn encode_and_write(request: &ExportRequest) -> Result<String, CommandError> {
 
 /// Decode an image file to RGBA8 for the canvas engine.
 ///
+/// Returns a raw binary response (not JSON, which would serialise every pixel
+/// as a number): an 8-byte header — width and height as little-endian u32 —
+/// followed by row-major RGBA8 pixels. The frontend reads it as an ArrayBuffer.
+///
 /// Phase 1 formats: PNG, JPEG, WebP, TIFF, BMP. PSD/RAW arrive in Phase 4
 /// behind this same command so the frontend never changes.
 #[tauri::command]
-pub async fn open_image(path: String) -> CmdResult<OpenedImage> {
+pub async fn open_image(path: String) -> CmdResult<tauri::ipc::Response> {
     let img = image::open(&path).map_err(to_string_err)?;
     let rgba = img.to_rgba8();
     let (width, height) = (rgba.width(), rgba.height());
-    Ok(OpenedImage {
-        width,
-        height,
-        pixels: rgba.into_raw(),
-        color_mode: "rgb".to_string(),
-    })
+    let raw = rgba.into_raw();
+    let mut out = Vec::with_capacity(8 + raw.len());
+    out.extend_from_slice(&width.to_le_bytes());
+    out.extend_from_slice(&height.to_le_bytes());
+    out.extend_from_slice(&raw);
+    Ok(tauri::ipc::Response::new(out))
 }
 
 /// Read a UTF-8 text sidecar (project metadata, actions, plugin manifests).

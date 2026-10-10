@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="320 320 470 395" width="470" height="395">
+  <title>Diffract</title>
+  <!-- Brush tail -->
+  <path d="M380 452 C 376 520, 372 590, 392 628 C 404 650, 412 656, 412 672" fill="none" stroke="#000" stroke-width="24" stroke-linecap="round"/>
+  <path d="M378 340 C 390 368, 402 392, 404 412 L 354 412 C 356 392, 368 368, 378 340 Z" fill="#000"/>
+  <rect x="356" y="410" width="46" height="24" rx="3" fill="#6a6a6a"/>
+  <rect x="368" y="446" width="22" height="7" fill="#fff"/>
+  <!-- Body -->
+  <path d="M408 575 L 448 520 L 552 500 L 628 500 L 632 690 L 408 690 Z" fill="#000"/>
+  <path d="M448 520 L 552 500 L 496 594 Z" fill="#4a4a4a"/>
+  <path d="M408 575 L 448 520 L 496 594 L 420 672 Z" fill="#2a2a2a"/>
+  <!-- Front legs and paws -->
+  <path d="M540 600 L 582 600 L 582 690 L 540 690 Z" fill="#000"/>
+  <path d="M590 600 L 628 600 L 628 690 L 590 690 Z" fill="#000"/>
+  <rect x="408" y="668" width="116" height="22" fill="#000"/>
+  <rect x="520" y="676" width="20" height="14" fill="#000"/>
+  <rect x="580" y="676" width="34" height="14" fill="#000"/>
+  <rect x="612" y="676" width="20" height="14" fill="#000"/>
+  <!-- Head with ears -->
+  <path d="M520 340 L 566 380 Q 608 370 660 338 L 664 410 L 680 462 L 630 502 L 556 502 L 500 462 L 520 410 Z" fill="#000"/>
+  <path d="M522 352 L 544 396 L 526 408 Z" fill="#3a3a3a"/>
+  <path d="M658 352 L 640 396 L 656 408 Z" fill="#3a3a3a"/>
+  <!-- Angry eyes -->
+  <path d="M545 420 L 578 434 L 602 424 L 640 418 L 616 440 L 580 442 Z" fill="#fff"/>
+  <!-- Grin with fangs -->
+  <path d="M552 452 Q 596 474 640 452 L 632 474 Q 596 498 562 478 Z" fill="#fff"/>
+  <path d="M566 470 L 574 490 L 582 472 Z" fill="#000"/>
+  <path d="M610 470 L 618 490 L 626 470 Z" fill="#000"/>
+  <!-- Speech text -->
+  <g font-family="'Arial Black', 'Impact', 'DejaVu Sans', sans-serif" font-weight="900" fill="#000">
+    <text x="634" y="586" font-size="56" transform="rotate(-8 634 586)" letter-spacing="-3">MWA</text>
+    <text x="658" y="634" font-size="50" transform="rotate(-8 658 634)" letter-spacing="-3">HA</text>
+    <text x="660" y="684" font-size="50" transform="rotate(-8 660 684)" letter-spacing="-3">HA!</text>
+  </g>
+</svg>
