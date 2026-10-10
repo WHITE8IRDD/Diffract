@@ -13,12 +13,21 @@ export function StatusBar() {
   const cursorX = useUIStore((s) => s.cursorDocX);
   const cursorY = useUIStore((s) => s.cursorDocY);
   const cursorInside = useUIStore((s) => s.cursorInside);
-  const doc = useDocumentStore((s) => {
-    const d = s.documents.find((x) => x.id === s.activeDocumentId);
-    return d
-      ? { width: d.width, height: d.height, colorMode: d.colorMode, name: d.name }
-      : null;
-  });
+  // Select the stored document reference (stable between unrelated updates)
+  // and derive the display fields in render. Returning a freshly built object
+  // from a selector makes every store update look like a change, which loops
+  // React forever (error #185) once a document exists.
+  const activeDoc = useDocumentStore(
+    (s) => s.documents.find((x) => x.id === s.activeDocumentId) ?? null,
+  );
+  const doc = activeDoc
+    ? {
+        width: activeDoc.width,
+        height: activeDoc.height,
+        colorMode: activeDoc.colorMode,
+        name: activeDoc.name,
+      }
+    : null;
 
   return (
     <div className="flex h-[24px] shrink-0 items-center gap-3 border-t border-stroke-subtle bg-surface px-3 text-[11px] text-foreground-tertiary">

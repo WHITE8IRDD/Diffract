@@ -80,6 +80,8 @@ export interface EngineEvents {
 export class PixiEngine {
   readonly app = new Application();
   ready = false;
+  private disposed = false;
+  private initPromise: Promise<void> | null = null;
 
   /** Screen-space pan (CSS px) and zoom. */
   private panX = 0;
@@ -97,6 +99,11 @@ export class PixiEngine {
 
   async init(canvas: HTMLCanvasElement, events: EngineEvents = {}): Promise<void> {
     this.events = events;
+    this.initPromise = this.start(canvas);
+    return this.initPromise;
+  }
+
+  private async start(canvas: HTMLCanvasElement): Promise<void> {
     await this.app.init({
       canvas,
       preference: "webgpu",
@@ -106,6 +113,12 @@ export class PixiEngine {
       resolution: Math.min(window.devicePixelRatio || 1, 2),
       powerPreference: "high-performance",
     });
+    // destroy() ran while the renderer was still starting up (React StrictMode
+    // unmounts/remounts effects in dev). Tear down now that it is safe to do so.
+    if (this.disposed) {
+      this.teardown();
+      return;
+    }
     this.app.stage.addChild(this.world);
     this.app.stage.sortableChildren = false;
     // On-demand rendering: stop the ticker, render explicitly.
@@ -115,9 +128,24 @@ export class PixiEngine {
   }
 
   destroy(): void {
+    this.disposed = true;
+    this.ready = false;
+    if (!this.initPromise) {
+      this.teardown();
+      return;
+    }
+    // Calling app.destroy() before app.init() settles throws (the renderer's
+    // resize plugin is not attached yet), so defer teardown until it has.
+    void this.initPromise
+      .catch(() => undefined)
+      .then(() => this.teardown());
+  }
+
+  private teardown(): void {
     for (const doc of this.docs.values()) this.destroyDocRoot(doc);
     this.docs.clear();
-    this.app.destroy(true, { children: true });
+    // The <canvas> is owned by React — keep it in the DOM (removeView: false).
+    this.app.destroy({ removeView: false }, { children: true });
     this.ready = false;
   }
 

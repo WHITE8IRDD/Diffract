@@ -15,10 +15,12 @@ import { isTauri } from "@/hooks/useTauri";
 import { cn } from "@/utils/cn";
 
 export function TitleBar() {
-  const doc = useDocumentStore((s) => {
-    const d = s.documents.find((x) => x.id === s.activeDocumentId);
-    return d ? { name: d.name, dirty: d.dirty } : null;
-  });
+  // Select the stored document (stable reference), not a fresh object literal —
+  // a new object per call makes the subscription loop forever (error #185).
+  const activeDoc = useDocumentStore(
+    (s) => s.documents.find((x) => x.id === s.activeDocumentId) ?? null,
+  );
+  const doc = activeDoc ? { name: activeDoc.name, dirty: activeDoc.dirty } : null;
   const [maximized, setMaximized] = useState(false);
 
   // Tauri: real window controls.
