@@ -86,19 +86,14 @@ export class MoveTool implements Tool {
     surface.ctx.drawImage(copy, dx, dy);
     engine.markDirty(layerId);
 
+    // Snapshot both ends of the command so undo/redo are exact restores.
+    const after = engine.captureSnapshot(layerId);
+    if (!after) return;
+
     useHistoryStore.getState().push(doc.id, {
       label: "Move Layer",
       undo: () => engine.restoreSnapshot(layerId, before),
-      redo: () => {
-        const snap = engine.captureSnapshot(layerId);
-        surface.ctx.clearRect(0, 0, surface.width, surface.height);
-        surface.ctx.drawImage(copy, dx, dy);
-        engine.markDirty(layerId);
-        if (snap) {
-          // Keep a closure copy so redo/undo chains stay consistent.
-          (this as unknown as { _redoSnap?: unknown })._redoSnap = snap;
-        }
-      },
+      redo: () => engine.restoreSnapshot(layerId, after),
     });
     useDocumentStore.getState().setDocumentDirty(doc.id, true);
   }

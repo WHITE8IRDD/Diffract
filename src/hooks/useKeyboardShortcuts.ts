@@ -11,7 +11,6 @@ import type { ToolId } from "@/tools/types";
 import { useUIStore } from "@/store/useUIStore";
 import { useDocumentStore } from "@/store/useDocumentStore";
 import { useHistoryStore } from "@/store/useHistoryStore";
-import { useColorStore } from "@/store/useColorStore";
 import { getEngine } from "@/engine/registry";
 
 const TOOL_IDS = new Set<string>([
@@ -51,7 +50,6 @@ function dispatch(action: ShortcutAction | ToolId): void {
   const ui = useUIStore.getState();
   const docs = useDocumentStore.getState();
   const history = useHistoryStore.getState();
-  const colors = useColorStore.getState();
   const doc = docs.activeDocument();
   const engine = getEngine();
 
@@ -134,5 +132,4 @@ function dispatch(action: ShortcutAction | ToolId): void {
       ui.toggleStatusBar();
       break;
   }
-  void colors;
 }

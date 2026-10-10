@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  frontend:
+    name: Typecheck & build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck (strict)
+        run: npm run typecheck
+
+      - name: Production build
+        run: npm run build
+
+      - name: Icon pipeline smoke test
+        run: python3 scripts/generate_icons.py
+
+  # Rust/Tauri checks land with Phase 1 step 2 (needs webkit2gtk system deps
+  # on the runner); frontend CI keeps PRs honest today.
