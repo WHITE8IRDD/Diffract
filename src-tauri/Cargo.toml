@@ -1,0 +1,47 @@
+# Diffract — Tauri v2 backend (Rust).
+#
+# Layering mirrors the frontend: `commands` is the IPC surface, file codecs
+# live behind it (`image` crate in Phase 1; PSD/RAW crates arrive in Phase 4).
+# The bundle targets Windows 11 x64 (.msi) and keeps the install under 150 MB
+# by never embedding AI model weights.
+
+[package]
+name = "diffract"
+version = "0.1.0"
+description = "Diffract — AI-Native Image Editor"
+authors = ["Diffract Contributors"]
+edition = "2021"
+rust-version = "1.77"
+license = "MIT"
+
+# Tauri builds both a staticlib (for the bundler) and a normal bin.
+[lib]
+name = "diffract_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+
+# File I/O — Phase 1 formats. Phase 4 extends with `psd` and RAW decoding
+# (libraw bindings) behind the same command surface.
+image = { version = "0.25", default-features = false, features = [
+  "png",
+  "jpeg",
+  "webp",
+  "tiff",
+  "bmp",
+] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true
