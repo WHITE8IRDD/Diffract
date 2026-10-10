@@ -84,6 +84,8 @@ export class PixiEngine {
   readonly app = new Application();
   ready = false;
   private disposed = false;
+  private initialized = false;
+  private tornDown = false;
   private initPromise: Promise<void> | null = null;
 
   /** Screen-space pan (CSS px) and zoom. */
@@ -109,13 +111,19 @@ export class PixiEngine {
   private async start(canvas: HTMLCanvasElement): Promise<void> {
     await this.app.init({
       canvas,
-      preference: "webgpu",
+      // WebGL is available in desktop WebView2 and ordinary browsers; WebGPU
+      // initialization can reject before the first document ever appears.
+      preference: "webgl",
       backgroundAlpha: 0,
+      // The renderer paints only when dirty. Without preservation WebGL clears
+      // the backbuffer after presenting, leaving a blank artboard on idle frames.
+      preserveDrawingBuffer: true,
       antialias: false,
       autoDensity: true,
       resolution: Math.min(window.devicePixelRatio || 1, 2),
       powerPreference: "high-performance",
     });
+    this.initialized = true;
     // destroy() ran while the renderer was still starting up (React StrictMode
     // unmounts/remounts effects in dev). Tear down now that it is safe to do so.
     if (this.disposed) {
@@ -140,11 +148,13 @@ export class PixiEngine {
     // Calling app.destroy() before app.init() settles throws (the renderer's
     // resize plugin is not attached yet), so defer teardown until it has.
     void this.initPromise
-      .catch(() => undefined)
-      .then(() => this.teardown());
+      .then(() => this.teardown())
+      .catch(error => console.warn("Renderer initialization stopped during shutdown", error));
   }
 
   private teardown(): void {
+    if (this.tornDown || !this.initialized) return;
+    this.tornDown = true;
     for (const doc of this.docs.values()) this.destroyDocRoot(doc);
     this.docs.clear();
     // The <canvas> is owned by React — keep it in the DOM (removeView: false).
@@ -155,9 +165,21 @@ export class PixiEngine {
   // ── viewport ───────────────────────────────────────────────────────────
 
   resize(width: number, height: number): void {
-    if (!this.ready) return;
+    if (!this.ready || width <= 0 || height <= 0) return;
+    const oldWidth = this.viewportWidth();
+    const oldHeight = this.viewportHeight();
+    if (width === oldWidth && height === oldHeight) return;
     this.app.renderer.resize(width, height);
+    // The sidebars and tabs change the viewport size when leaving Home. Keep
+    // the same document point at the centre instead of leaving the artboard
+    // centred in the former (larger) Home viewport.
+    if (this.activeDocRoot()) {
+      this.panX += (width - oldWidth) / 2;
+      this.panY += (height - oldHeight) / 2;
+    }
     this.applyTransform();
+    // Resizing clears the WebGL drawing buffer even with preservation enabled.
+    this.requestRender();
   }
 
   getZoom(): number {
@@ -260,6 +282,7 @@ export class PixiEngine {
     }
     root.surfaces.set(layerId, surface);
     root.container.addChildAt(surface.sprite, 2); // above checker + frame
+    this.syncLayerOrderAndProps(doc.id, doc.layers);
     this.requestRender();
   }
 
@@ -344,6 +367,32 @@ export class PixiEngine {
     this.requestRender();
   }
 
+  /** Rebuild raster surfaces for a resized/cropped document. Pixels are copied by
+   * the caller; this also updates the artboard, textures and export dimensions. */
+  replaceDocumentPixels(doc: DocumentState, pixels: Map<string, ImageData>, masks?: Map<string, ImageData>): void {
+    this.destroyDocument(doc.id);
+    this.setActiveDocument(doc.id);
+    for (const layer of doc.layers) {
+      this.createLayerSurface(doc, layer.id, "transparent");
+      const image = pixels.get(layer.id);
+      const surface = this.getSurface(layer.id);
+      if (image && surface) {
+        surface.ctx.putImageData(image, 0, 0);
+        this.markDirty(layer.id);
+      }
+      if (layer.mask && surface) {
+        this.createMaskSurface(layer.id, layer.mask.id);
+        const mask = masks?.get(layer.id);
+        if (mask && surface.mask) {
+          surface.mask.ctx.putImageData(mask, 0, 0);
+          surface.mask.dirty = true;
+        }
+      }
+    }
+    this.syncLayerOrderAndProps(doc.id, doc.layers);
+    this.fitToScreen();
+  }
+
   /** Draw (or clear, with `null`) the marching-ants selection outline. */
   setSelectionOverlay(docId: string, rect: PixelRect | null): void {
     const root = this.docs.get(docId);
@@ -376,20 +425,29 @@ export class PixiEngine {
       id: string;
       visible: boolean;
       opacity: number;
+      fillOpacity?: number;
       blendMode: BlendModeId;
     }[],
   ): void {
     const root = this.docs.get(docId);
     if (!root) return;
     let z = 2; // above checker + frame
+    const liveIds = new Set(layers.map(layer => layer.id));
+    for (const [id, surface] of root.surfaces) {
+      if (!liveIds.has(id)) surface.sprite.visible = false;
+    }
     for (const layer of layers) {
       const surface = root.surfaces.get(layer.id);
       if (!surface) continue;
       root.container.setChildIndex(surface.sprite, z++);
       surface.sprite.visible = layer.visible;
-      surface.sprite.alpha = layer.opacity;
+      // Until layer effects exist, Fill controls the pixel content's opacity;
+      // combine it with the layer-wide opacity for display and CPU export.
+      surface.sprite.alpha = layer.opacity * (layer.fillOpacity ?? 1);
       surface.sprite.blendMode = BLEND_MAP[layer.blendMode] ?? "normal";
     }
+    // Selection overlay must stay above every layer, even after reordering.
+    if (root.selection) root.container.setChildIndex(root.selection, root.container.children.length - 1);
     this.requestRender();
   }
 
@@ -646,9 +704,9 @@ export class PixiEngine {
     tile.width = 16;
     tile.height = 16;
     const ctx = tile.getContext("2d")!;
-    ctx.fillStyle = "#2e2e2e";
+    ctx.fillStyle = "#24262a";
     ctx.fillRect(0, 0, 16, 16);
-    ctx.fillStyle = "#232323";
+    ctx.fillStyle = "#191b1e";
     ctx.fillRect(0, 0, 8, 8);
     ctx.fillRect(8, 8, 8, 8);
     this.checkerTile = Texture.from(tile);

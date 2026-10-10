@@ -183,3 +183,27 @@ Menu items beyond the current phase are visible but disabled and tagged
 ## Licence
 
 MIT © Diffract Contributors
+
+## Current editor capabilities (October 2026)
+
+The previous phase roadmap in this README is **not** a list of implemented features.
+The currently usable browser/desktop workflows are: create/open raster images;
+paint/erase, move, fill, gradient, clone stamp, rectangle and ellipse shapes;
+editable text layers (click the canvas with T, Ctrl+Enter to finish, edit in
+Properties); rectangular selection; crop with C then Enter; Free Transform
+(move/scale with Ctrl+T, Enter to apply, Esc to cancel); layers and undo/redo;
+layer-preserving `.diffract` Save/Open; and flattened PNG/JPEG/WebP export with
+scale and quality controls. The Save command saves the layered project; Export
+is separate. The browser downloads files and the desktop app uses native dialogs.
+
+**Not PhotoCraft parity.** PhotoCraft is an independent, much larger native Rust
+editor (see [its MIT/Apache-2.0 source](https://github.com/storytold/photocraft)).
+Diffract does not yet read/write PSD, implement PhotoCraft's 53 tools or its
+500+ commands, provide real AI inference, or support the disabled tool groups.
+Unavailable tools are dimmed instead of silently doing nothing. Text is stored with editable metadata, while shapes are raster layers;
+Free Transform moves/scales raster surfaces (type is redrawn on later edits).
+The project format is Diffract-specific and not compatible with PhotoCraft.
+
+Run `npm run build` for TypeScript and production checks. Run
+`node --experimental-strip-types --test tests/shortcuts.test.mjs` for shortcut
+unit tests. The web editor can be previewed with `npm run dev`.

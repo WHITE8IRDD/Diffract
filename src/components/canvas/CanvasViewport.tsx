@@ -17,6 +17,8 @@ import { getEngine } from "@/engine/registry";
 import { getTool } from "@/tools/ToolRegistry";
 import type { ToolPointerEvent } from "@/tools/types";
 import { EmptyState } from "./EmptyState";
+import { TransformOverlay } from "./TransformOverlay";
+import { createText, updateText } from "@/tools/TextTool";
 import { cn } from "@/utils/cn";
 
 export function CanvasViewport() {
@@ -25,8 +27,27 @@ export function CanvasViewport() {
   usePixiEngine(canvasRef);
 
   const docCount = useDocumentStore((s) => s.documents.length);
+  const homeVisible = useUIStore(s => s.homeVisible);
+  const showHome = docCount === 0 || homeVisible;
+  const activeDoc = useDocumentStore(s => s.documents.find(d => d.id === s.activeDocumentId) ?? null);
+  const [panVersion, setPanVersion] = useState(0);
   const activeToolId = useUIStore((s) => s.activeToolId);
   const toolCursor = getTool(activeToolId).cursor;
+  const [textEdit, setTextEdit] = useState<{ docId: string; layerId: string; x: number; y: number; content: string } | null>(null);
+  const textRef = useRef<HTMLTextAreaElement>(null);
+  const textFocusReady = useRef(false);
+  const zoom = useUIStore(s => s.zoom);
+  useEffect(() => {
+    textFocusReady.current = false;
+    if (!textEdit) return;
+    // A canvas click still has a pointerup/default focus action pending. Focus
+    // after it completes or the browser immediately blurs the new editor.
+    const timer = window.setTimeout(() => {
+      textRef.current?.focus();
+      textFocusReady.current = true;
+    }, 80);
+    return () => window.clearTimeout(timer);
+  }, [textEdit?.layerId]);
 
   // Space-bar temporary hand pan.
   const [spaceHeld, setSpaceHeld] = useState(false);
@@ -83,6 +104,13 @@ export function CanvasViewport() {
       panLast.current = { x: ev.view.x, y: ev.view.y };
       return;
     }
+    if (activeToolId === "text") {
+      const doc = useDocumentStore.getState().activeDocument();
+      if (!doc || ev.doc.x < 0 || ev.doc.y < 0 || ev.doc.x >= doc.width || ev.doc.y >= doc.height) return;
+      const layerId = createText(ev.doc.x, ev.doc.y);
+      if (layerId) setTextEdit({ docId: doc.id, layerId, x: ev.doc.x, y: ev.doc.y, content: "" });
+      return;
+    }
     getTool(activeToolId).onPointerDown?.(ev);
   };
 
@@ -96,6 +124,7 @@ export function CanvasViewport() {
     if (panning.current && panLast.current) {
       const engine = getEngine();
       engine?.panBy(ev.view.x - panLast.current.x, ev.view.y - panLast.current.y);
+      setPanVersion(v => v + 1);
       panLast.current = { x: ev.view.x, y: ev.view.y };
       return;
     }
@@ -113,7 +142,11 @@ export function CanvasViewport() {
   };
 
   const onPointerLeave = () => {
+    // A captured pointer may leave the canvas while dragging. Do not cancel
+    // the stroke until pointerup; otherwise painting at the edge disappears.
     useUIStore.getState().setCursor(0, 0, false);
+  };
+  const onPointerCancel = () => {
     getTool(activeToolId).cancel?.();
     panning.current = false;
     panLast.current = null;
@@ -121,6 +154,7 @@ export function CanvasViewport() {
 
   /** Wheel = zoom at cursor (Photoshop). Shift+wheel = vertical pan. */
   const onWheel = (e: React.WheelEvent) => {
+    if (showHome) return;
     const engine = getEngine();
     if (!engine) return;
     const rect = canvasRef.current?.getBoundingClientRect();
@@ -130,6 +164,7 @@ export function CanvasViewport() {
     };
     if (e.shiftKey) {
       engine.panBy(-e.deltaY, 0);
+      setPanVersion(v => v + 1);
       return;
     }
     const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
@@ -138,6 +173,14 @@ export function CanvasViewport() {
     if (doc) useDocumentStore.getState().setView(doc.id, { zoom: engine.getZoom() });
   };
 
+  // Guides are DOM-only overlays, never included in exports or tool input.
+  void panVersion;
+  const engine = getEngine();
+  const origin = engine?.docToScreen(0, 0);
+  const gridStep = Math.max(4, 32 * zoom);
+  const rulerStep = zoom < .25 ? 500 : zoom < .5 ? 200 : zoom < 1 ? 100 : 50;
+  const xTicks = activeDoc && origin ? Array.from({ length: Math.ceil(activeDoc.width / rulerStep) + 1 }, (_, i) => i * rulerStep) : [];
+  const yTicks = activeDoc && origin ? Array.from({ length: Math.ceil(activeDoc.height / rulerStep) + 1 }, (_, i) => i * rulerStep) : [];
   const cursorClass = spaceHeld
     ? "cursor-grab active:cursor-grabbing"
     : toolCursor === "crosshair"
@@ -154,8 +197,8 @@ export function CanvasViewport() {
     <div
       ref={containerRef}
       className={cn(
-        "difr-checkerboard relative flex-1 overflow-hidden",
-        cursorClass,
+        "difr-canvas-surface relative flex-1 overflow-hidden",
+        !showHome && cursorClass,
       )}
       onWheel={onWheel}
     >
@@ -164,19 +207,43 @@ export function CanvasViewport() {
         ref={canvasRef}
         className={cn(
           "absolute inset-0 h-full w-full",
-          docCount === 0 && "invisible",
+          showHome && "invisible",
         )}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerLeave={onPointerLeave}
+        onPointerCancel={onPointerCancel}
       />
-      {docCount === 0 && (
-        <div className="absolute inset-0">
-          <EmptyState />
+      {showHome && <div className="absolute inset-0"><EmptyState /></div>}
+      {!showHome && activeDoc?.view.showGrid && origin && <div className="pointer-events-none absolute z-10 border border-accent/25"
+        style={{ left: origin.x, top: origin.y, width: activeDoc.width * zoom, height: activeDoc.height * zoom,
+          backgroundImage: "linear-gradient(to right, rgba(170,190,210,.17) 1px, transparent 1px), linear-gradient(to bottom, rgba(170,190,210,.17) 1px, transparent 1px)",
+          backgroundSize: `${gridStep}px ${gridStep}px` }} />}
+      {!showHome && activeDoc?.view.showRulers && origin && <>
+        <div className="pointer-events-none absolute left-0 right-0 top-0 z-10 h-[18px] overflow-hidden border-b border-stroke-strong bg-surface/90 font-mono text-[9px] text-foreground-tertiary">
+          {xTicks.map(value => <span key={value} className="absolute bottom-0 h-3 border-l border-stroke-strong pl-0.5"
+            style={{ left: origin.x + value * zoom }}>{value}</span>)}
         </div>
-      )}
-      {/* Rulers are Phase 2 — the view flag already exists per document. */}
+        <div className="pointer-events-none absolute bottom-0 left-0 top-[18px] z-10 w-[18px] overflow-hidden border-r border-stroke-strong bg-surface/90 font-mono text-[8px] text-foreground-tertiary">
+          {yTicks.map(value => <span key={value} className="absolute left-0 w-[18px] border-t border-stroke-strong"
+            style={{ top: origin.y + value * zoom - 18 }}>{value}</span>)}
+        </div>
+      </>}
+      {!showHome && textEdit && <textarea
+        ref={textRef}
+        aria-label="Type text; Ctrl+Enter to finish"
+        placeholder="Type here…"
+        className="absolute z-30 min-h-[64px] min-w-[220px] resize border border-accent bg-surface/90 p-1 text-white outline-none"
+        style={{ left: getEngine()?.docToScreen(textEdit.x, textEdit.y).x ?? 0,
+          top: getEngine()?.docToScreen(textEdit.x, textEdit.y).y ?? 0,
+          fontSize: Math.max(14, 48 * zoom) }}
+        value={textEdit.content}
+        onChange={e => setTextEdit(t => t ? { ...t, content: e.target.value } : t)}
+        onBlur={() => { if (!textFocusReady.current) return; updateText(textEdit.docId, textEdit.layerId, { content: textEdit.content }); setTextEdit(null); }}
+        onKeyDown={e => { if (e.key === "Escape") { e.currentTarget.blur(); } if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) e.currentTarget.blur(); }}
+      />}
+      {!showHome && <TransformOverlay />}
     </div>
   );
 }

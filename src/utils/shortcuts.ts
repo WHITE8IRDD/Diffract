@@ -27,13 +27,11 @@ export type ShortcutAction =
   | "edit.undo"
   | "edit.redo"
   | "edit.fill"
-  // Image
-  | "image.canvasSize"
+  | "edit.transform"
   // Layer
   | "layer.new"
   | "layer.duplicate"
   | "layer.delete"
-  | "layer.mergeDown"
   // Select
   | "select.all"
   | "select.deselect"
@@ -46,8 +44,7 @@ export type ShortcutAction =
   | "view.toggleRulers"
   | "view.toggleGrid"
   // Window
-  | "window.togglePanels"
-  | "window.toggleStatusBar";
+  | "window.togglePanels";
 
 export interface ShortcutBinding {
   /** Human-readable accelerator, Windows style (Ctrl+Z). */
@@ -110,21 +107,18 @@ export const SHORTCUTS: ShortcutBinding[] = [
   { keys: "Ctrl+Z", action: "edit.undo", match: ctrl("z") },
   { keys: "Ctrl+Shift+Z", action: "edit.redo", match: ctrlShift("z") },
   { keys: "Ctrl+Y", action: "edit.redo", match: ctrl("y") },
-  { keys: "Ctrl+Shift+F", action: "edit.fill", match: ctrlShift("f") },
-
-  // Image
-  { keys: "Ctrl+Alt+C", action: "image.canvasSize", match: () => false },
+  { keys: "Shift+F5", action: "edit.fill", match: (e, m) => !m.ctrl && !m.alt && m.shift && e.key === "F5" },
+  { keys: "Ctrl+T", action: "edit.transform", match: ctrl("t") },
 
   // Layer
   { keys: "Ctrl+Shift+N", action: "layer.new", match: ctrlShift("n") },
   { keys: "Ctrl+J", action: "layer.duplicate", match: ctrl("j") },
   { keys: "Delete", action: "layer.delete", match: simple("delete") },
-  { keys: "Ctrl+E", action: "layer.mergeDown", match: ctrl("e") },
 
   // Select
   { keys: "Ctrl+A", action: "select.all", match: ctrl("a") },
   { keys: "Ctrl+D", action: "select.deselect", match: ctrl("d") },
-  { keys: "Ctrl+Shift+I", action: "select.inverse", match: ctrlShift("i") },
+
 
   // View
   { keys: "Ctrl++", action: "view.zoomIn", match: ctrl("+") },
@@ -136,7 +130,6 @@ export const SHORTCUTS: ShortcutBinding[] = [
 
   // Window
   { keys: "Tab", action: "window.togglePanels", match: simple("tab") },
-  { keys: "Ctrl+Alt+0", action: "window.toggleStatusBar", match: () => false },
 ];
 
 /** Display string for a shortcut action (for menus / tooltips). */

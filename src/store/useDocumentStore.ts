@@ -24,6 +24,8 @@ import { useHistoryStore } from "./useHistoryStore";
 import { freshId } from "@/utils/ids";
 import { getEngine } from "@/engine/registry";
 import type { BlendModeId } from "@/utils/blendModes";
+import { useSelectionStore } from "./useSelectionStore";
+import type { PixelRect } from "@/engine/snapshot";
 
 interface DocumentStore {
   documents: DocumentState[];
@@ -40,6 +42,7 @@ interface DocumentStore {
 
   // ── View (per document) ───────────────────────────────────────────────
   setView: (docId: string, patch: Partial<DocumentState["view"]>) => void;
+  cropDocument: (docId: string, rect: PixelRect) => void;
 
   // ── Layers ────────────────────────────────────────────────────────────
   activeLayer: () => LayerState | null;
@@ -105,6 +108,10 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
   },
 
   createDocument: (opts) => {
+    if (!Number.isInteger(opts.width) || !Number.isInteger(opts.height) || opts.width < 1 || opts.height < 1 ||
+        opts.width > 8192 || opts.height > 8192 || opts.width * opts.height > 24_000_000) {
+      throw new Error("Canvas dimensions must be 1–8192 px and at most 24 million pixels.");
+    }
     const docId = freshId("doc");
     const bgId = freshId("layer");
     const doc: DocumentState = {
@@ -156,6 +163,8 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
   },
 
   closeDocument: (docId) => {
+    const doc = get().documents.find(d => d.id === docId);
+    if (doc?.dirty && !window.confirm(`Close “${doc.name}” without saving changes?`)) return;
     getEngine()?.destroyDocument(docId);
     set((s) => {
       const documents = s.documents.filter((d) => d.id !== docId);
@@ -195,6 +204,39 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
         d.id === docId ? { ...d, view: { ...d.view, ...patch } } : d,
       ),
     })),
+
+  cropDocument: (docId, rect) => {
+    const doc = get().documents.find(d => d.id === docId);
+    const engine = getEngine();
+    if (!doc || !engine) return;
+    const x = Math.max(0, Math.floor(rect.x)), y = Math.max(0, Math.floor(rect.y));
+    const width = Math.min(doc.width - x, Math.ceil(rect.w));
+    const height = Math.min(doc.height - y, Math.ceil(rect.h));
+    if (width < 1 || height < 1 || (x === 0 && y === 0 && width === doc.width && height === doc.height)) return;
+    const before = new Map<string, ImageData>();
+    const after = new Map<string, ImageData>();
+    const beforeMasks = new Map<string, ImageData>();
+    const afterMasks = new Map<string, ImageData>();
+    for (const layer of doc.layers) {
+      const surface = engine.getSurface(layer.id);
+      if (!surface) continue;
+      before.set(layer.id, surface.ctx.getImageData(0, 0, doc.width, doc.height));
+      after.set(layer.id, surface.ctx.getImageData(x, y, width, height));
+      if (surface.mask) {
+        beforeMasks.set(layer.id, surface.mask.ctx.getImageData(0, 0, doc.width, doc.height));
+        afterMasks.set(layer.id, surface.mask.ctx.getImageData(x, y, width, height));
+      }
+    }
+    const cropped: DocumentState = { ...doc, width, height, dirty: true,
+      layers: doc.layers.map(l => l.text ? { ...l, text: { ...l.text, x: l.text.x - x, y: l.text.y - y } } : l) };
+    const apply = (value: DocumentState, pixels: Map<string, ImageData>, masks: Map<string, ImageData>) => {
+      set(state => ({ documents: state.documents.map(d => d.id === docId ? value : d) }));
+      engine.replaceDocumentPixels(value, pixels, masks);
+      useSelectionStore.getState().setSelection(docId, null);
+    };
+    apply(cropped, after, afterMasks);
+    useHistoryStore.getState().push(docId, { label: "Crop", undo: () => apply(doc, before, beforeMasks), redo: () => apply(cropped, after, afterMasks) });
+  },
 
   activeLayer: () => {
     const doc = get().activeDocument();
@@ -258,6 +300,7 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
         ? (layers[Math.min(index, layers.length - 1)]?.id ?? null)
         : doc.activeLayerId;
 
+    const snapshot = getEngine()?.captureSnapshot(layerId);
     applyLayers(docId, layers, activeLayerId);
     getEngine()?.deleteLayerSurface(layerId);
     set((s) => ({
@@ -274,8 +317,12 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
         const restored = [...d.layers];
         restored.splice(Math.min(index, restored.length), 0, removed);
         applyLayers(docId, restored, layerId);
+        getEngine()?.createLayerSurface(d, layerId, "transparent");
+        if (snapshot) getEngine()?.restoreSnapshot(layerId, snapshot);
+        getEngine()?.syncLayerOrderAndProps(docId, restored);
       },
       redo: () => {
+        getEngine()?.deleteLayerSurface(layerId);
         applyLayers(
           docId,
           (get().documents.find((d2) => d2.id === docId)?.layers ?? []).filter(
@@ -313,6 +360,8 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
     }));
     // Copy pixels via the engine.
     getEngine()?.duplicateLayerSurface(layerId, copyId);
+    getEngine()?.syncLayerOrderAndProps(docId, get().documents.find(d => d.id === docId)?.layers ?? []);
+    const copiedPixels = getEngine()?.captureSnapshot(copyId);
 
     useHistoryStore.getState().push(docId, {
       label: `Duplicate Layer "${source.name}"`,
@@ -331,6 +380,8 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
         if (!d) return;
         applyLayers(docId, insertAbove(d.layers, layerId, copy), copyId);
         getEngine()?.duplicateLayerSurface(layerId, copyId);
+        if (copiedPixels) getEngine()?.restoreSnapshot(copyId, copiedPixels);
+        getEngine()?.syncLayerOrderAndProps(docId, get().documents.find(x => x.id === docId)?.layers ?? []);
       },
     });
   },

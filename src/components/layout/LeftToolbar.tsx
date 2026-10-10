@@ -9,7 +9,7 @@
 
 import { useRef, useState } from "react";
 import { ChevronRight } from "lucide-react";
-import { TOOL_GROUPS, getTool } from "@/tools/ToolRegistry";
+import { PlaceholderTool, TOOL_GROUPS, getTool } from "@/tools/ToolRegistry";
 import { toolIcon } from "@/components/icons/toolIcon";
 import type { ToolId } from "@/tools/types";
 import { shortcutFor } from "@/utils/shortcuts";
@@ -24,12 +24,13 @@ export function LeftToolbar() {
   const holdTimer = useRef<number | null>(null);
 
   return (
-    <div className="flex w-[44px] shrink-0 flex-col items-center gap-0.5 border-r border-stroke-subtle bg-surface py-1.5">
+    <div className="grid w-[76px] shrink-0 grid-cols-2 content-start justify-items-center gap-y-1 border-r border-stroke-subtle bg-surface py-2">
       {TOOL_GROUPS.map((group) => {
         const tool = getTool(group.primary);
         const Icon = toolIcon(group.primary);
         const active = group.members.includes(activeToolId);
         const grouped = group.members.length > 1;
+        const unavailable = tool instanceof PlaceholderTool;
 
         return (
           <div key={group.primary} className="relative">
@@ -37,14 +38,15 @@ export function LeftToolbar() {
               <TooltipTrigger asChild>
                 <button
                   type="button"
-                  aria-label={tool.name}
+                  aria-label={unavailable ? `${tool.name} (not available yet)` : tool.name}
+                  disabled={unavailable}
                   className={cn(
                     "difr-focus-ring difr-press relative flex h-8 w-8 items-center justify-center rounded-md transition-colors",
-                    active
+                    unavailable ? "cursor-not-allowed opacity-35" : active
                       ? "bg-accent/15 text-accent"
                       : "text-foreground-secondary hover:bg-surface-hover hover:text-foreground",
                   )}
-                  onClick={() => setActiveTool(group.primary)}
+                  onClick={() => { if (!unavailable) setActiveTool(group.primary); }}
                   onPointerDown={() => {
                     if (!grouped) return;
                     holdTimer.current = window.setTimeout(() => {
@@ -73,7 +75,7 @@ export function LeftToolbar() {
                 </button>
               </TooltipTrigger>
               <TooltipContent side="right" className="flex items-center gap-2">
-                {tool.name}
+                {unavailable ? `${tool.name} · Not available yet` : tool.name}
                 <kbd className="rounded-sm border border-stroke px-1 text-[10px] text-foreground-tertiary">
                   {shortcutFor(group.primary)}
                 </kbd>
@@ -114,7 +116,7 @@ function Flyout({
     <>
       {/* click-catcher */}
       <div className="fixed inset-0 z-[100]" onPointerDown={onClose} />
-      <div className="difr-menu-enter absolute left-[42px] top-0 z-[101] min-w-[190px] rounded-md border border-stroke bg-popover p-1 shadow-2xl">
+      <div className="difr-menu-enter absolute left-[70px] top-0 z-[101] min-w-[190px] rounded-md border border-stroke bg-popover p-1 shadow-2xl">
         {members.map((id) => {
           const tool = getTool(id);
           const Icon = toolIcon(id);
@@ -122,9 +124,10 @@ function Flyout({
             <button
               key={id}
               type="button"
+              disabled={tool instanceof PlaceholderTool}
               className={cn(
                 "difr-focus-ring flex w-full items-center gap-2.5 rounded-sm px-2 py-1.5 text-left text-[12px] transition-colors",
-                id === activeToolId
+                tool instanceof PlaceholderTool ? "cursor-not-allowed opacity-35" : id === activeToolId
                   ? "bg-surface-hover text-foreground"
                   : "text-foreground-secondary hover:bg-surface-hover hover:text-foreground",
               )}

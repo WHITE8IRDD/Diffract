@@ -23,7 +23,7 @@ import { Slider } from "@/components/ui/slider";
 import { useUIStore } from "@/store/useUIStore";
 import { useDocumentStore } from "@/store/useDocumentStore";
 import { getEngine } from "@/engine/registry";
-import { tauriApi } from "@/hooks/useTauri";
+import { isTauri, tauriApi } from "@/hooks/useTauri";
 import { cn } from "@/utils/cn";
 
 type Format = "png" | "jpeg" | "webp";
@@ -41,7 +41,6 @@ export function ExportAsDialog() {
     const d = s.documents.find((x) => x.id === s.activeDocumentId);
     return d ?? null;
   });
-  const markSaved = useDocumentStore((s) => s.markSaved);
 
   const [format, setFormat] = useState<Format>("png");
   const [quality, setQuality] = useState(92);
@@ -57,26 +56,39 @@ export function ExportAsDialog() {
     try {
       const flat = engine.compositeToCanvas(doc.id);
       if (!flat) throw new Error("Nothing to export — document has no pixels.");
-      const blob = await new Promise<Blob | null>((resolve) =>
-        flat.toBlob(resolve, "image/png"),
-      );
-      if (!blob) throw new Error("PNG encoding failed.");
-      const bytes = new Uint8Array(await blob.arrayBuffer());
-      const result = await tauriApi.exportImage(
-        {
-          name: doc.name,
-          width: doc.width,
-          height: doc.height,
-          dpi: doc.dpi,
-          colorMode: doc.colorMode,
-          layerCount: doc.layers.length,
-        },
-        bytes,
-        format,
-        `${doc.name}${FORMATS.find((f) => f.id === format)?.ext ?? ".png"}`,
-      );
+      const output = document.createElement("canvas");
+      output.width = Math.max(1, Math.round(flat.width * scale / 100));
+      output.height = Math.max(1, Math.round(flat.height * scale / 100));
+      const ctx = output.getContext("2d");
+      if (!ctx) throw new Error("Canvas export is not available.");
+      if (format === "jpeg") { ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, output.width, output.height); }
+      ctx.drawImage(flat, 0, 0, output.width, output.height);
+      const ext = FORMATS.find(f => f.id === format)?.ext ?? ".png";
+      const filename = `${doc.name.replace(/[\\/:*?"<>|]/g, "_")}${ext}`;
+      let result: { ok: boolean; path: string | null; error?: string };
+      if (isTauri()) {
+        const path = await tauriApi.saveFileDialog(filename, [{ name: format.toUpperCase(), extensions: [ext.slice(1)] }]);
+        if (!path) { setBusy(false); return; }
+        const png = await new Promise<Blob | null>(resolve => output.toBlob(resolve, "image/png"));
+        if (!png) throw new Error("PNG encoding failed.");
+        result = await tauriApi.exportImage(
+          { name: doc.name, width: output.width, height: output.height, dpi: doc.dpi,
+            colorMode: doc.colorMode, layerCount: doc.layers.length },
+          new Uint8Array(await png.arrayBuffer()), format, path, quality,
+        );
+      } else {
+        const mime = `image/${format}`;
+        const blob = await new Promise<Blob | null>(resolve => output.toBlob(resolve, mime, quality / 100));
+        if (!blob || blob.type !== mime) throw new Error(`${format.toUpperCase()} export is not supported by this browser.`);
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = url; anchor.download = filename;
+        document.body.appendChild(anchor); anchor.click(); anchor.remove();
+        window.setTimeout(() => URL.revokeObjectURL(url), 30000);
+        result = { ok: true, path: null };
+      }
       if (result.ok) {
-        markSaved(doc.id, result.path);
+        // Flattened exports are not layered project saves; keep the dirty flag.
         setStatus(
           result.path
             ? `Saved to ${result.path}`

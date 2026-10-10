@@ -22,7 +22,16 @@ export interface LayerMask {
   linked: boolean;
 }
 
+export interface TextContent {
+  content: string;
+  x: number;
+  y: number;
+  fontSize: number;
+  color: string;
+}
+
 export interface LayerState {
+  text?: TextContent;
   id: string;
   name: string;
   kind: LayerKind;

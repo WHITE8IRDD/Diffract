@@ -10,6 +10,10 @@
  */
 
 import type { Tool, ToolId } from "./types";
+import { TextTool } from "./TextTool";
+import { CloneStampTool } from "./CloneStampTool";
+import { CropTool } from "./CropTool";
+import { ShapeTool } from "./ShapeTools";
 import { MoveTool } from "./MoveTool";
 import { BrushTool } from "./BrushTool";
 import { HandTool, ZoomTool, EyedropperTool } from "./ViewTools";
@@ -49,7 +53,7 @@ export const TOOL_GROUPS: ToolGroup[] = [
   { primary: "pen", members: ["pen"] },
   { primary: "text", members: ["text"] },
   { primary: "path-select", members: ["path-select"] },
-  { primary: "shape", members: ["shape"] },
+  { primary: "shape", members: ["shape", "shape-ellipse"] },
   { primary: "hand", members: ["hand"] },
   { primary: "zoom", members: ["zoom"] },
 ];
@@ -74,8 +78,8 @@ register(new PlaceholderTool("lasso", "Lasso Tool", "crosshair"));
 register(new PlaceholderTool("polygon-lasso", "Polygonal Lasso Tool", "crosshair"));
 register(new PaintBucketTool());
 register(new GradientTool());
-register(new PlaceholderTool("crop", "Crop Tool", "crosshair"));
-register(new PlaceholderTool("text", "Horizontal Type Tool", "text"));
+register(new CropTool());
+register(new TextTool());
 
 // Phase 2/3/4 tools (registered so the keyboard map and menus are complete).
 register(new PlaceholderTool("magic-wand", "Magic Wand Tool", "crosshair"));
@@ -84,13 +88,14 @@ register(new PlaceholderTool("healing", "Spot Healing Brush Tool", "crosshair"))
 register(new PlaceholderTool("patch", "Patch Tool", "crosshair"));
 register(new PlaceholderTool("red-eye", "Red Eye Tool", "crosshair"));
 register(new PlaceholderTool("history-brush", "History Brush Tool", "crosshair"));
-register(new PlaceholderTool("clone-stamp", "Clone Stamp Tool", "crosshair"));
+register(new CloneStampTool());
 register(new PlaceholderTool("dodge", "Dodge Tool", "crosshair"));
 register(new PlaceholderTool("burn", "Burn Tool", "crosshair"));
 register(new PlaceholderTool("sponge", "Sponge Tool", "crosshair"));
 register(new PlaceholderTool("pen", "Pen Tool", "crosshair"));
 register(new PlaceholderTool("path-select", "Path Selection Tool", "default"));
-register(new PlaceholderTool("shape", "Rectangle Tool", "crosshair"));
+register(new ShapeTool());
+register(new ShapeTool(true));
 
 export function getTool(id: ToolId): Tool {
   return registry.get(id) ?? registry.get("move")!;

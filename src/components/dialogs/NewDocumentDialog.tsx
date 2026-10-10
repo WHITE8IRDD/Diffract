@@ -41,12 +41,11 @@ const PRESETS: Preset[] = [
   { label: "4K UHD", width: 3840, height: 2160, dpi: 72 },
   { label: "A4 Print (300 DPI)", width: 2480, height: 3508, dpi: 300 },
   { label: "Instagram Post", width: 1080, height: 1080, dpi: 72 },
-  { label: "8K", width: 7680, height: 4320, dpi: 72 },
 ];
 
 const COLOR_MODES: { id: ColorMode; label: string }[] = [
   { id: "rgb", label: "RGB Color · 8-bit" },
-  { id: "grayscale", label: "Grayscale · 8-bit" },
+  { id: "grayscale", label: "Grayscale (not available yet)" },
   { id: "cmyk", label: "CMYK Color (Phase 4)" },
 ];
 
@@ -62,11 +61,14 @@ export function NewDocumentDialog() {
   const [colorMode, setColorMode] = useState<ColorMode>("rgb");
   const [background, setBackground] = useState<"white" | "transparent">("white");
 
+  const invalid = !Number.isFinite(width) || !Number.isFinite(height) || width < 1 || height < 1 ||
+    width > 8192 || height > 8192 || width * height > 24_000_000;
   const submit = () => {
+    if (invalid) return;
     createDocument({
       name: name.trim() || "Untitled-1",
-      width: Math.max(1, Math.min(16384, width)),
-      height: Math.max(1, Math.min(16384, height)),
+      width: Math.round(width),
+      height: Math.round(height),
       dpi: Math.max(1, Math.min(1200, dpi)),
       colorMode,
       background,
@@ -153,7 +155,7 @@ export function NewDocumentDialog() {
                 <ChipButton
                   key={m.id}
                   active={colorMode === m.id}
-                  disabled={m.id === "cmyk"}
+                  disabled={m.id !== "rgb"}
                   onClick={() => setColorMode(m.id)}
                 >
                   {m.label}
@@ -181,11 +183,12 @@ export function NewDocumentDialog() {
           </div>
         </div>
 
+        {invalid && <p role="alert" className="text-[11px] text-destructive">Enter dimensions between 1 and 8192 px (maximum 24 million pixels).</p>}
         <DialogFooter>
           <Button variant="ghost" onClick={() => closeDialog("newDocument")}>
             Cancel
           </Button>
-          <Button onClick={submit}>Create</Button>
+          <Button disabled={invalid} onClick={submit}>Create</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -209,7 +212,7 @@ function NumberField({
         min={1}
         className="h-7 w-full bg-transparent text-[12px] text-foreground outline-none"
         value={Number.isFinite(value) ? value : ""}
-        onChange={(e) => onChange(parseInt(e.target.value, 10) || 1)}
+        onChange={(e) => onChange(e.target.value === "" ? 0 : Number(e.target.value))}
       />
     </label>
   );

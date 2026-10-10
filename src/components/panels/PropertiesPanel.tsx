@@ -4,6 +4,8 @@
  * on what is selected.
  */
 
+import { selectionFor } from "@/store/useSelectionStore";
+import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,7 +14,9 @@ import { Separator } from "@/components/ui/separator";
 import { useDocumentStore } from "@/store/useDocumentStore";
 import { useUIStore } from "@/store/useUIStore";
 import { getTool } from "@/tools/ToolRegistry";
+import { updateText } from "@/tools/TextTool";
 import type { BrushToolOptions } from "@/tools/types";
+import { rgbaToHex } from "@/utils/color";
 
 export function PropertiesPanel() {
   const doc = useDocumentStore((s) => {
@@ -101,6 +105,19 @@ export function PropertiesPanel() {
           </div>
         )}
 
+        {layer?.text && doc && <div className="flex flex-col gap-2 pb-2">
+          <Label htmlFor="text-content">Type layer · editable</Label>
+          <textarea id="text-content" key={layer.id + layer.text.content}
+            defaultValue={layer.text.content} rows={3}
+            onBlur={e => updateText(doc.id, layer.id, { content: e.target.value })}
+            className="w-full rounded border border-stroke bg-surface-2 p-2 text-xs text-foreground" />
+          <PropRow label="Size"><Input type="number" min={1} max={1000}
+            value={layer.text.fontSize} onChange={e => updateText(doc.id, layer.id, { fontSize: Number(e.target.value) })} /></PropRow>
+          <PropRow label="Color"><input type="color" aria-label="Text color"
+            value={textColorHex(layer.text.color)}
+            onChange={e => updateText(doc.id, layer.id, { color: e.target.value })} /></PropRow>
+        </div>}
+
         {activeToolId === "magic-wand" && (
           <div className="flex flex-col gap-2.5">
             <PropRow label="Tolerance">
@@ -124,7 +141,7 @@ export function PropertiesPanel() {
           </div>
         )}
 
-        {activeToolId === "crop" && (
+        {activeToolId === "crop" && (<div className="flex flex-col gap-2">
           <PropRow label="Ratio">
             <Input
               placeholder="Free"
@@ -135,13 +152,17 @@ export function PropertiesPanel() {
               }}
             />
           </PropRow>
-        )}
+          <Button size="sm" disabled={!doc || !selectionFor(doc.id)}
+            onClick={() => { if (doc) { const sel = selectionFor(doc.id); if (sel) useDocumentStore.getState().cropDocument(doc.id, sel); } }}>
+            Crop selection · Enter
+          </Button>
+        </div>)}
 
         {!isBrushFamily &&
           activeToolId !== "magic-wand" &&
           activeToolId !== "crop" && (
             <p className="text-[11px] text-foreground-disabled">
-              {tool.name} options appear here as the tool matures (Phase 1 step 2).
+              Select a layer to edit its properties, or drag on the canvas with {tool.name}.
             </p>
           )}
       </div>
@@ -180,15 +201,8 @@ export function PropertiesPanel() {
               />
               Lock pixels
             </label>
-            <label className="flex items-center gap-2 text-[11px] text-foreground-secondary">
-              <Switch
-                checked={layer.clipped}
-                onCheckedChange={(checked) =>
-                  setLayerMeta(doc.id, layer.id, { clipped: checked })
-                }
-              />
-              Clipping mask
-            </label>
+            {/* Clipping masks are not composited yet. Do not expose a toggle
+                that changes only metadata while leaving pixels unchanged. */}
           </div>
         ) : (
           <p className="text-[11px] text-foreground-disabled">
@@ -198,6 +212,12 @@ export function PropertiesPanel() {
       </div>
     </div>
   );
+}
+
+function textColorHex(color: string): string {
+  if (/^#[0-9a-f]{6}$/i.test(color)) return color;
+  const match = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i.exec(color);
+  return match ? rgbaToHex({ r: Number(match[1]), g: Number(match[2]), b: Number(match[3]), a: 1 }) : "#000000";
 }
 
 function PropRow({ label, children }: { label: string; children: React.ReactNode }) {

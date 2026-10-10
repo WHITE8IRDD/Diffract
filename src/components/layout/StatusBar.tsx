@@ -31,36 +31,28 @@ export function StatusBar() {
 
   return (
     <div className="flex h-[24px] shrink-0 items-center gap-3 border-t border-stroke-subtle bg-surface px-3 text-[11px] text-foreground-tertiary">
-      <StatusChip label="Zoom" value={formatZoom(zoom)} />
-      <Separator orientation="vertical" className="h-3.5" />
-      <StatusChip
-        label="X / Y"
-        value={
-          cursorInside
-            ? `${Math.round(cursorX)}, ${Math.round(cursorY)}`
-            : "—, —"
-        }
-        mono
-      />
-      <Separator orientation="vertical" className="h-3.5" />
-      <StatusChip
-        label="Doc"
-        value={doc ? formatDocSize(doc.width, doc.height) : "—"}
-      />
-      <Separator orientation="vertical" className="h-3.5" />
-      <StatusChip
-        label="Mode"
-        value={doc ? doc.colorMode.toUpperCase() : "—"}
-      />
+      {doc ? <>
+        <StatusChip label="Zoom" value={formatZoom(zoom)} />
+        <Separator orientation="vertical" className="h-3.5" />
+        <StatusChip
+          label="X / Y"
+          value={cursorInside ? `${Math.round(cursorX)}, ${Math.round(cursorY)}` : "—, —"}
+          mono
+        />
+        <Separator orientation="vertical" className="h-3.5" />
+        <StatusChip label="Doc" value={formatDocSize(doc.width, doc.height)} />
+        <Separator orientation="vertical" className="h-3.5" />
+        <StatusChip label="Mode" value={doc.colorMode.toUpperCase()} />
+      </> : <span>No document</span>}
 
       <div className="ml-auto flex items-center gap-3">
         <span className="flex items-center gap-1.5">
           <span className="difr-spectrum h-1.5 w-1.5 rounded-full" />
-          Local AI · Offline
+          Layered editing · Offline
         </span>
         <Separator orientation="vertical" className="h-3.5" />
         <span className="rounded-sm bg-surface-2 px-1.5 py-px font-medium text-foreground-secondary">
-          WebGPU
+          WebGL
         </span>
       </div>
     </div>
