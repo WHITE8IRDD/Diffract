@@ -60,7 +60,7 @@
   --input: #3a3a3a;
   --selection: #0f5f92;
 
-  /* Diffract spectrum (prism) — used by the logo and gradient accents */
+  /* Diffract spectrum — gradient accents (dots, EmptyState, About) */
   --spectrum-1: #ff4d6d;
   --spectrum-2: #ff9e40;
   --spectrum-3: #ffe14d;

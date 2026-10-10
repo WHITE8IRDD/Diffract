@@ -2,9 +2,10 @@
 /**
  * generate-icons.mjs — npm entry point for app icon generation.
  *
- * Delegates to the dependency-free Python rasterizer (`generate_icons.py`),
- * which draws the prism logo from public/icon.svg's design and writes
- * PNG + multi-size ICO into src-tauri/icons/.
+ * Delegates to the dependency-free Python packager (`generate_icons.py`),
+ * which repackages the badge PNGs from public/brand/png/ (rendered from
+ * public/brand/logo-original.png) into PNG + multi-size ICO in
+ * src-tauri/icons/.
  */
 
 import { execSync } from "node:child_process";

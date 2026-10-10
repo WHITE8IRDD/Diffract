@@ -1,9 +1,9 @@
 /**
- * Diffract brand mark — the cat artwork inside a white circular badge.
+ * Diffract brand mark — the front-facing cat inside a white circular badge.
  *
  * Source of truth: `public/brand/diffract-badge.svg` (also the favicon and,
  * via `scripts/generate_icons.py`, the app icons). `compact` is kept for API
- * compatibility with the earlier prism mark and has no effect here.
+ * compatibility and has no effect here.
  */
 
 export interface LogoProps {

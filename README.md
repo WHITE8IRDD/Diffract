@@ -90,7 +90,7 @@ diffract/                      ← repository root (the monorepo)
 │   │   │   ├── ExportAsDialog.tsx    # PNG/JPEG/WebP export pipeline
 │   │   │   └── AboutDialog.tsx
 │   │   ├── icons/
-│   │   │   ├── Logo.tsx       #   prism-splitting-light brand mark
+│   │   │   ├── Logo.tsx       #   cat badge brand mark (/brand/diffract-badge.svg)
 │   │   │   └── toolIcon.tsx   #   tool glyph set (lucide + custom)
 │   │   └── ui/                # shadcn/ui primitives (Fluent-styled)
 │   │       ├── button.tsx · input.tsx · label.tsx · separator.tsx
@@ -148,11 +148,11 @@ diffract/                      ← repository root (the monorepo)
 │
 ├── models/README.md           # AI weights manifest (binaries never committed)
 ├── public/
-│   ├── icon.svg               # prism brand mark
+│   ├── icon.svg               # cat badge brand mark (embeds badge PNG)
 │   └── models/README.md       # dev-time model drop point
 └── scripts/
     ├── generate-icons.mjs     # npm entry for icon generation
-    └── generate_icons.py      # dependency-free rasterizer (PNG + ICO)
+    └── generate_icons.py      # badge PNG repackager (PNG + ICO)
 ```
 
 ## Design notes (Phase 1)
