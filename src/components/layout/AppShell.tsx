@@ -14,8 +14,10 @@
  *   └───────────────────────────────────────────┘
  */
 
+import { useEffect, useRef } from "react";
+import { useDocumentStore } from "@/store/useDocumentStore";
 import { TitleBar } from "./TitleBar";
-import { MenuBar } from "./MenuBar";
+import { ToolOptionsBar } from "./ToolOptionsBar";
 import { LeftToolbar } from "./LeftToolbar";
 import { RightDock } from "./RightDock";
 import { StatusBar } from "./StatusBar";
@@ -23,31 +25,39 @@ import { DocumentTabs } from "./DocumentTabs";
 import { CanvasViewport } from "@/components/canvas/CanvasViewport";
 import { NewDocumentDialog } from "@/components/dialogs/NewDocumentDialog";
 import { ExportAsDialog } from "@/components/dialogs/ExportAsDialog";
+import { ShortcutsDialog } from "@/components/dialogs/ShortcutsDialog";
 import { AboutDialog } from "@/components/dialogs/AboutDialog";
 import { useUIStore } from "@/store/useUIStore";
-import { cn } from "@/utils/cn";
 
 export function AppShell() {
+  const documentCount = useDocumentStore(s => s.documents.length);
+  const homeVisible = useUIStore(s => s.homeVisible);
+  const setHomeVisible = useUIStore(s => s.setHomeVisible);
+  const showHome = documentCount === 0 || homeVisible;
+  const previousCount = useRef(documentCount);
+  useEffect(() => {
+    if (documentCount > previousCount.current) setHomeVisible(false);
+    previousCount.current = documentCount;
+  }, [documentCount, setHomeVisible]);
   const panelsHidden = useUIStore((s) => s.panelsHidden);
+  const toolbarVisible = useUIStore((s) => s.toolbarVisible);
   const rightDockVisible = useUIStore((s) => s.rightDockVisible);
   const statusBarVisible = useUIStore((s) => s.statusBarVisible);
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-background text-foreground">
       <TitleBar />
-      <MenuBar />
+      <ToolOptionsBar />
 
       <div className="flex min-h-0 flex-1">
-        <div className={cn(panelsHidden && "hidden")}>
-          <LeftToolbar />
-        </div>
+        {!showHome && !panelsHidden && toolbarVisible && <LeftToolbar />}
 
         <main className="flex min-w-0 flex-1 flex-col">
-          <DocumentTabs />
+          {!showHome && <DocumentTabs />}
           <CanvasViewport />
         </main>
 
-        {rightDockVisible && !panelsHidden && <RightDock />}
+        {!showHome && rightDockVisible && !panelsHidden && <RightDock />}
       </div>
 
       {statusBarVisible && <StatusBar />}
@@ -56,6 +66,7 @@ export function AppShell() {
       <NewDocumentDialog />
       <ExportAsDialog />
       <AboutDialog />
+      <ShortcutsDialog />
     </div>
   );
 }

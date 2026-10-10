@@ -6,6 +6,8 @@
  * In a browser tab: `<input type="file">` → canvas decode → new document.
  */
 
+import { loadProject } from "./project";
+import { rememberBrowser, rememberNative } from "./recentFiles";
 import { isTauri, tauriApi } from "@/hooks/useTauri";
 import { useDocumentStore } from "@/store/useDocumentStore";
 
@@ -74,15 +76,57 @@ export async function pickAndDecodeImage(): Promise<DecodedImage | null> {
 
 /** File ▸ Open: pick, decode and open as a new document. */
 export async function openImageAsDocument(): Promise<string | null> {
-  const image = await pickAndDecodeImage();
-  if (!image) return null;
+  try {
+    if (isTauri()) {
+      const path = await tauriApi.openFileDialog([{ name: "Images and Diffract Projects", extensions: [...IMAGE_EXTENSIONS, "diffract"] }]);
+      return path ? await openPathAsDocument(path) : null;
+    }
+    const file = await new Promise<File | null>(resolve => {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = [...IMAGE_EXTENSIONS.map(e => `.${e}`), ".diffract"].join(",");
+      input.onchange = () => resolve(input.files?.[0] ?? null);
+      input.addEventListener("cancel", () => resolve(null));
+      input.click();
+    });
+    return file ? await openFileAsDocument(file) : null;
+  } catch (err) {
+    window.alert(`Open failed: ${err instanceof Error ? err.message : String(err)}`);
+    return null;
+  }
+}
+
+/** Also used by drag-and-drop and browser Recent; errors propagate to the caller. */
+export async function openFileAsDocument(file: File, addToRecent = true): Promise<string> {
+  const ext = file.name.split(".").pop()?.toLowerCase();
+  if (ext !== "diffract" && !IMAGE_EXTENSIONS.includes(ext ?? "")) {
+    throw new Error(`Unsupported file: ${file.name}`);
+  }
+  const id = ext === "diffract" ?
+    await loadProject(await file.text()) : createImageDocument(await decodeInBrowser(file));
+  if (addToRecent) await rememberBrowser(file);
+  return id;
+}
+
+/** Native Recent can reopen a real disk path, unlike the browser file picker. */
+export async function openPathAsDocument(path: string): Promise<string> {
+  if (!isTauri()) throw new Error("Native file paths are unavailable in the browser.");
+  let id: string;
+  if (path.toLowerCase().endsWith(".diffract")) {
+    const text = await tauriApi.readTextFile(path);
+    if (text === null) throw new Error("Unable to read the project.");
+    id = await loadProject(text, path);
+  } else {
+    const name = path.split(/[\\/]/).pop()?.replace(/\.[^.]+$/, "") || "Untitled";
+    id = createImageDocument(parseOpenedImage(await tauriApi.openImageRaw(path), name));
+  }
+  rememberNative(path);
+  return id;
+}
+
+function createImageDocument(image: DecodedImage): string {
   return useDocumentStore.getState().createDocument({
-    name: image.name,
-    width: image.width,
-    height: image.height,
-    dpi: 72,
-    colorMode: "rgb",
-    background: "transparent",
-    pixels: image.pixels,
+    name: image.name, width: image.width, height: image.height,
+    dpi: 72, colorMode: "rgb", background: "transparent", pixels: image.pixels,
   });
 }

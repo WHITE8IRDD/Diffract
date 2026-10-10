@@ -7,7 +7,8 @@
  *  * items outside the current phase render disabled with a phase badge.
  */
 
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { clearRecent, listRecent, openRecent, subscribeRecent, type RecentFile } from "@/io/recentFiles";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,14 +21,17 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { MENUS, type MenuActionId, type MenuItem } from "./menuData";
+import { useDocumentStore } from "@/store/useDocumentStore";
 import { useUIStore } from "@/store/useUIStore";
 import { useAppCommands } from "@/hooks/useAppCommands";
 import { cn } from "@/utils/cn";
 
-export function MenuBar() {
+export function MenuBar({ compact = false }: { compact?: boolean }) {
   const openMenuId = useUIStore((s) => s.openMenuId);
   const setOpenMenuId = useUIStore((s) => s.setOpenMenuId);
   const commands = useAppCommands();
+  const [recent, setRecent] = useState<RecentFile[]>(() => listRecent());
+  useEffect(() => subscribeRecent(() => setRecent(listRecent())), []);
   const rootRef = useRef<HTMLDivElement>(null);
 
   /**
@@ -44,7 +48,7 @@ export function MenuBar() {
   return (
     <div
       ref={rootRef}
-      className="flex h-[30px] shrink-0 items-stretch gap-0.5 border-b border-stroke-subtle bg-surface px-1"
+      className={cn("flex h-[30px] shrink-0 items-stretch gap-0.5 px-1", compact ? "bg-transparent" : "border-b border-stroke-subtle bg-surface")}
       onPointerDown={(e) => e.stopPropagation()}
     >
       {MENUS.map((menu) => (
@@ -71,6 +75,8 @@ export function MenuBar() {
             {menu.items.map((item, i) =>
               item.kind === "separator" ? (
                 <DropdownMenuSeparator key={`${item.id}-sep-${i}`} />
+              ) : item.id === "file.openRecent" ? (
+                <RecentMenu key="recent" items={recent} />
               ) : (
                 <MenuRow key={`${item.id}-${i}`} item={item} onAction={commands.run} />
               ),
@@ -79,13 +85,24 @@ export function MenuBar() {
         </DropdownMenu>
       ))}
 
-      {/* Brand badge pinned to the right of the menu strip */}
-      <div className="ml-auto flex items-center pr-1 text-[11px] text-foreground-disabled">
-        <span className="difr-spectrum mr-1.5 h-1.5 w-1.5 rounded-full" />
-        AI-Native Image Editor
-      </div>
+      {!compact && <div className="ml-auto flex items-center pr-1 text-[11px] text-foreground-disabled">Diffract</div>}
     </div>
   );
+}
+
+function RecentMenu({ items }: { items: RecentFile[] }) {
+  return <DropdownMenuSub>
+    <DropdownMenuSubTrigger>Open Recent</DropdownMenuSubTrigger>
+    <DropdownMenuSubContent className="min-w-[230px]">
+      {items.length === 0 ? <DropdownMenuItem disabled>No recent files</DropdownMenuItem> : items.map(entry =>
+        <DropdownMenuItem key={entry.id} title={entry.kind === "native" ? entry.id : entry.name}
+          onSelect={() => void openRecent(entry).catch(error => window.alert(error instanceof Error ? error.message : String(error)))}>
+          <span className="max-w-[210px] truncate">{entry.name}</span>
+        </DropdownMenuItem>)}
+      {items.length > 0 && <><DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={() => void clearRecent()}>Clear Recent Files</DropdownMenuItem></>}
+    </DropdownMenuSubContent>
+  </DropdownMenuSub>;
 }
 
 function MenuRow({
@@ -95,7 +112,10 @@ function MenuRow({
   item: MenuItem;
   onAction: (id: MenuActionId) => void;
 }) {
-  const disabled = item.phase !== undefined && item.phase > 1;
+  const hasDocument = useDocumentStore(s => s.activeDocumentId !== null);
+  const needsDocument = !item.id.startsWith("help.") && !item.id.startsWith("window.") &&
+    !["file.new", "file.open", "file.openRecent"].includes(item.id);
+  const disabled = (item.phase !== undefined && item.phase > 1) || (needsDocument && !hasDocument);
 
   if (item.submenu !== undefined && item.submenu.length === 0) {
     // Placeholder submenu — enabled only when it gains real entries.

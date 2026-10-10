@@ -14,8 +14,8 @@ import { useUIStore } from "@/store/useUIStore";
 
 const RUNTIME_FACTS = [
   { label: "Desktop shell", value: "Tauri v2 · Rust" },
-  { label: "Canvas engine", value: "PixiJS v8 · WebGPU" },
-  { label: "AI runtime", value: "ONNX Runtime Web · local GPU" },
+  { label: "Canvas engine", value: "PixiJS v8 · WebGL" },
+  { label: "Projects", value: "Layered .diffract files" },
   { label: "Colour", value: "sRGB (P3 / Adobe RGB in Phase 4)" },
   { label: "Licence", value: "MIT" },
 ];
@@ -45,9 +45,9 @@ export function AboutDialog() {
         </DialogHeader>
 
         <p className="text-[11px] leading-relaxed text-foreground-secondary">
-          A lightweight, blazing-fast alternative to Photoshop with deep,
-          privacy-first AI integration. Every AI feature runs locally on your
-          GPU — no cloud, no telemetry, no subscriptions.
+          An offline layered editor. This build supports raster painting,
+          editable type, shapes, crops, transforms and project files. Additional
+          PhotoCraft-level tools and PSD support are not implemented yet.
         </p>
 
         <Separator />

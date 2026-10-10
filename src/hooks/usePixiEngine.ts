@@ -40,7 +40,15 @@ export function usePixiEngine(
         onPointerDocMove: (x, y, inside) =>
           useUIStore.getState().setCursor(x, y, inside),
       })
-      .then(fitToParent);
+      .then(() => {
+        if (disposed) return;
+        fitToParent();
+        // Rebuild any documents created while the renderer was starting.
+        const state = useDocumentStore.getState();
+        engine.setActiveDocument(state.activeDocumentId);
+        const doc = state.activeDocument();
+        if (doc) { engine.syncLayerOrderAndProps(doc.id, doc.layers); engine.fitToScreen(); }
+      }).catch((error) => console.error("Canvas renderer could not start", error));
 
     const observer = new ResizeObserver(fitToParent);
     if (parent) observer.observe(parent);

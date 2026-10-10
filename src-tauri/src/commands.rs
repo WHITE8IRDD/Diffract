@@ -47,6 +47,9 @@ pub struct ExportRequest {
     pub doc: DocumentSummary,
     /// "png" | "jpeg" | "webp"
     pub format: String,
+    /// JPEG quality (1..100).
+    #[serde(default = "default_quality")]
+    pub quality: u8,
     /// Destination path chosen by the user.
     pub path: String,
     /// Flattened pixels, PNG-encoded by the frontend compositor.
@@ -60,6 +63,8 @@ pub struct SaveResult {
     pub path: Option<String>,
     pub error: Option<String>,
 }
+
+fn default_quality() -> u8 { 92 }
 
 // ---------------------------------------------------------------------------
 // Commands
@@ -96,8 +101,11 @@ fn encode_and_write(request: &ExportRequest) -> Result<String, CommandError> {
         "jpeg" => {
             // JPEG has no alpha — flatten onto white first.
             let rgb = img.to_rgb8();
-            image::DynamicImage::ImageRgb8(rgb)
-                .save_with_format(path, image::ImageFormat::Jpeg)?;
+            let file = std::fs::File::create(path)?;
+            let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(
+                file, request.quality.clamp(1, 100)
+            );
+            image::DynamicImage::ImageRgb8(rgb).write_with_encoder(encoder)?;
         }
         "webp" => img.save_with_format(path, image::ImageFormat::WebP)?,
         other => {
@@ -134,4 +142,10 @@ pub async fn open_image(path: String) -> CmdResult<tauri::ipc::Response> {
 #[tauri::command]
 pub async fn read_text_file(path: String) -> CmdResult<String> {
     std::fs::read_to_string(path).map_err(to_string_err)
+}
+
+/// Save the layer-preserving project JSON to a user-selected path.
+#[tauri::command]
+pub async fn write_text_file(path: String, content: String) -> CmdResult<()> {
+    std::fs::write(path, content).map_err(to_string_err)
 }

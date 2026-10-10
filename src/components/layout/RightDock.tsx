@@ -15,9 +15,9 @@ import { HistoryPanel } from "@/components/panels/HistoryPanel";
 import { ColorPickerPanel } from "@/components/panels/ColorPickerPanel";
 
 const PANELS = [
-  { id: "layers" as const, title: "Layers", Component: LayersPanel },
   { id: "properties" as const, title: "Properties", Component: PropertiesPanel },
   { id: "history" as const, title: "History", Component: HistoryPanel },
+  { id: "layers" as const, title: "Layers", Component: LayersPanel },
   { id: "color" as const, title: "Color", Component: ColorPickerPanel },
 ];
 
@@ -26,7 +26,7 @@ export function RightDock() {
   const collapsePanel = useUIStore((s) => s.collapsePanel);
 
   return (
-    <aside className="flex w-[268px] shrink-0 flex-col gap-2 overflow-y-auto border-l border-stroke-subtle bg-background p-2">
+    <aside className="flex w-[278px] shrink-0 flex-col gap-1 overflow-y-auto border-l border-stroke-subtle bg-background p-1">
       {PANELS.map(({ id, title, Component }) => {
         const state = panels[id];
         if (!state.visible) return null;

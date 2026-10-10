@@ -11,33 +11,33 @@
 :root {
   /* Fluent dark palette (app runs dark by default; `:root` kept for the
      future light theme). */
-  --radius: 0.375rem;
+  --radius: 0.25rem;
 
   /* Surfaces — layered like Mica / acrylic dark */
-  --background: #1f1f1f;
-  --surface: #272727;
-  --surface-2: #2d2d2d;
-  --surface-3: #333333;
-  --surface-hover: #383838;
-  --surface-active: #3f3f3f;
+  --background: #111215;
+  --surface: #191a1e;
+  --surface-2: #202227;
+  --surface-3: #272a30;
+  --surface-hover: #30333b;
+  --surface-active: #343a46;
 
   /* Strokes */
-  --stroke: #3a3a3a;
-  --stroke-subtle: #2e2e2e;
-  --stroke-strong: #4d4d4d;
+  --stroke: #35383f;
+  --stroke-subtle: #26282d;
+  --stroke-strong: #484d57;
 
   /* Text */
-  --foreground: #f5f5f5;
-  --foreground-secondary: #cfcfcf;
-  --foreground-tertiary: #9b9b9b;
-  --foreground-disabled: #6b6b6b;
+  --foreground: #eef0f2;
+  --foreground-secondary: #c3c7cf;
+  --foreground-tertiary: #999da8;
+  --foreground-disabled: #747987;
 
   /* Accent — Fluent dark accent (cyan-blue) + Diffract spectrum */
-  --accent: #4cc2ff;
-  --accent-hover: #68cdfc;
-  --accent-active: #3bb0ef;
-  --accent-fg: #00344d;
-  --ring: #4cc2ff;
+  --accent: #6498d4;
+  --accent-hover: #7cabe2;
+  --accent-active: #5184c5;
+  --accent-fg: #0b1725;
+  --ring: #82b8ed;
 
   /* Semantic */
   --destructive: #ff6b6b;
@@ -46,19 +46,19 @@
   --warning: #f5c26b;
 
   /* shadcn component aliases */
-  --card: #272727;
-  --card-foreground: #f5f5f5;
-  --popover: #2b2b2b;
-  --popover-foreground: #f5f5f5;
-  --primary: #4cc2ff;
-  --primary-foreground: #00344d;
-  --secondary: #333333;
-  --secondary-foreground: #f5f5f5;
-  --muted: #2d2d2d;
-  --muted-foreground: #9b9b9b;
-  --border: #3a3a3a;
-  --input: #3a3a3a;
-  --selection: #0f5f92;
+  --card: #191a1e;
+  --card-foreground: #eef0f2;
+  --popover: #1f2126;
+  --popover-foreground: #eef0f2;
+  --primary: #6498d4;
+  --primary-foreground: #0b1725;
+  --secondary: #272a30;
+  --secondary-foreground: #eef0f2;
+  --muted: #202227;
+  --muted-foreground: #999da8;
+  --border: #35383f;
+  --input: #35383f;
+  --selection: #25486d;
 
   /* Diffract spectrum (prism) — used by the logo and gradient accents */
   --spectrum-1: #ff4d6d;
@@ -196,15 +196,20 @@ textarea,
   );
 }
 
-/* Checkerboard used behind the canvas document (transparency) */
-.difr-checkerboard {
-  background-image: linear-gradient(45deg, #2c2c2c 25%, transparent 25%),
-    linear-gradient(-45deg, #2c2c2c 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, #2c2c2c 75%),
-    linear-gradient(-45deg, transparent 75%, #2c2c2c 75%);
-  background-size: 16px 16px;
-  background-position: 0 0, 0 8px, 8px -8px, -8px 0px;
-  background-color: #232323;
+/* PhotoCraft's dot-grid worktable, tuned darker than its Pro theme. The
+   transparency checkerboard is rendered by Pixi only INSIDE the artboard. */
+.difr-canvas-surface {
+  background-color: #15171b;
+  background-image: radial-gradient(circle, #292c34 0.75px, transparent 0.9px);
+  background-size: 22px 22px;
+  background-position: 2px 2px;
+}
+
+.difr-home-surface {
+  background-color: #111215;
+  background-image: radial-gradient(circle, #262a31 0.75px, transparent 1px);
+  background-size: 22px 22px;
+  background-position: 2px 2px;
 }
 
 /* Small caps label used by panel headers */

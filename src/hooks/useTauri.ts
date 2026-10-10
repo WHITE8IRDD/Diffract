@@ -97,10 +97,11 @@ export const tauriApi = {
     pngBytes: Uint8Array,
     format: "png" | "jpeg" | "webp",
     path: string,
+    quality = 92,
   ): Promise<SaveResult> {
     return nativeOr<SaveResult>(
       "export_image",
-      { request: { doc, format, path, pngBytes: Array.from(pngBytes) } },
+      { request: { doc, format, path, quality, pngBytes: Array.from(pngBytes) } },
       async () => {
         // Browser fallback: trigger a download of the PNG payload.
         const blob = new Blob([pngBytes.slice().buffer as ArrayBuffer], { type: "image/png" });
@@ -122,6 +123,13 @@ export const tauriApi = {
   async openImageRaw(path: string): Promise<ArrayBuffer> {
     const { invoke } = await import("@tauri-apps/api/core");
     return invoke<ArrayBuffer>("open_image", { path });
+  },
+
+  /** Write a layered project file using the native filesystem. */
+  async writeTextFile(path: string, content: string): Promise<void> {
+    if (!isTauri()) throw new Error("Native file write is unavailable.");
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("write_text_file", { path, content });
   },
 
   /** Read a UTF-8 text file from disk (Tauri only). */

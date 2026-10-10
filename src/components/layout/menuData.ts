@@ -10,7 +10,7 @@ export type MenuActionId =
   | "file.new" | "file.open" | "file.openRecent" | "file.save" | "file.saveAs"
   | "file.export" | "file.exportAs" | "file.documentInfo" | "file.close"
   | "edit.undo" | "edit.redo" | "edit.cut" | "edit.copy" | "edit.paste"
-  | "edit.fill" | "edit.stroke" | "edit.prefs"
+  | "edit.fill" | "edit.transform" | "edit.stroke" | "edit.prefs"
   | "image.adjustments" | "image.canvasSize" | "image.imageSize" | "image.rotate" | "image.crop" | "image.trim"
   | "layer.new" | "layer.duplicate" | "layer.delete" | "layer.layerMask"
   | "layer.newAdjustment" | "layer.layerStyle" | "layer.mergeDown" | "layer.flatten"
@@ -50,10 +50,10 @@ export const MENUS: MenuDef[] = [
     items: [
       { id: "file.new", label: "New…", shortcut: "Ctrl+N" },
       { id: "file.open", label: "Open…", shortcut: "Ctrl+O", phase: 1 },
-      { id: "file.openRecent", label: "Open Recent", phase: 2, submenu: [] },
+      { id: "file.openRecent", label: "Open Recent" },
       sep,
-      { id: "file.save", label: "Save", shortcut: "Ctrl+S", phase: 1 },
-      { id: "file.saveAs", label: "Save As…", shortcut: "Ctrl+Shift+S", phase: 1 },
+      { id: "file.save", label: "Save Project (.diffract)", shortcut: "Ctrl+S" },
+      { id: "file.saveAs", label: "Save Project As…", shortcut: "Ctrl+Shift+S" },
       sep,
       { id: "file.export", label: "Export", shortcut: "Ctrl+Shift+E", phase: 1 },
       { id: "file.exportAs", label: "Export As…", phase: 1 },
@@ -73,7 +73,8 @@ export const MENUS: MenuDef[] = [
       { id: "edit.copy", label: "Copy", shortcut: "Ctrl+C", phase: 2 },
       { id: "edit.paste", label: "Paste", shortcut: "Ctrl+V", phase: 2 },
       sep,
-      { id: "edit.fill", label: "Fill…", shortcut: "Shift+F5", phase: 1 },
+      { id: "edit.fill", label: "Fill with Foreground", shortcut: "Shift+F5" },
+      { id: "edit.transform", label: "Free Transform", shortcut: "Ctrl+T" },
       { id: "edit.stroke", label: "Stroke…", phase: 2 },
       sep,
       { id: "edit.prefs", label: "Preferences…", phase: 2 },
@@ -86,7 +87,7 @@ export const MENUS: MenuDef[] = [
       { id: "image.adjustments", label: "Adjustments", phase: 2, submenu: [] },
       sep,
       { id: "image.imageSize", label: "Image Size…", shortcut: "Ctrl+Alt+I", phase: 2 },
-      { id: "image.canvasSize", label: "Canvas Size…", shortcut: "Ctrl+Alt+C", phase: 1 },
+      { id: "image.canvasSize", label: "Canvas Size…", shortcut: "Ctrl+Alt+C", phase: 2 },
       sep,
       { id: "image.rotate", label: "Image Rotation", phase: 2, submenu: [] },
       { id: "image.crop", label: "Crop", phase: 1 },
@@ -101,11 +102,11 @@ export const MENUS: MenuDef[] = [
       { id: "layer.duplicate", label: "Duplicate Layer…", shortcut: "Ctrl+J" },
       { id: "layer.delete", label: "Delete Layer", shortcut: "Delete" },
       sep,
-      { id: "layer.layerMask", label: "Layer Mask", phase: 1, submenu: [] },
+      { id: "layer.layerMask", label: "Add / Remove Layer Mask" },
       { id: "layer.newAdjustment", label: "New Adjustment Layer", phase: 2, submenu: [] },
       { id: "layer.layerStyle", label: "Layer Style", phase: 2, submenu: [] },
       sep,
-      { id: "layer.clippingMask", label: "Create Clipping Mask", shortcut: "Ctrl+Alt+G", phase: 1 },
+      { id: "layer.clippingMask", label: "Create Clipping Mask", shortcut: "Ctrl+Alt+G", phase: 2 },
       { id: "layer.group", label: "Group Layers", shortcut: "Ctrl+G", phase: 2 },
       { id: "layer.ungroup", label: "Ungroup", phase: 2 },
       sep,
@@ -119,7 +120,7 @@ export const MENUS: MenuDef[] = [
     items: [
       { id: "select.all", label: "All", shortcut: "Ctrl+A" },
       { id: "select.deselect", label: "Deselect", shortcut: "Ctrl+D" },
-      { id: "select.inverse", label: "Inverse", shortcut: "Ctrl+Shift+I" },
+      { id: "select.inverse", label: "Inverse", shortcut: "Ctrl+Shift+I", phase: 2 },
       sep,
       { id: "select.colorRange", label: "Color Range…", phase: 2 },
       { id: "select.expand", label: "Expand…", phase: 2 },

@@ -6,21 +6,22 @@
  * Keyboard shortcuts dispatch the same ids via `useKeyboardShortcuts`.
  */
 
-import { useCallback } from "react";
 import type { MenuActionId } from "@/components/layout/menuData";
 import { useUIStore } from "@/store/useUIStore";
 import { useDocumentStore } from "@/store/useDocumentStore";
 import { useHistoryStore } from "@/store/useHistoryStore";
-import { useSelectionStore } from "@/store/useSelectionStore";
+import { selectionFor, useSelectionStore } from "@/store/useSelectionStore";
+import { useColorStore } from "@/store/useColorStore";
+import { commitRegionEdit } from "@/tools/region";
 import { getEngine } from "@/engine/registry";
+import { saveProject } from "@/io/project";
 import { openImageAsDocument } from "@/io/openImage";
 
 export interface AppCommands {
   run: (id: MenuActionId) => void;
 }
 
-export function useAppCommands(): AppCommands {
-  const run = useCallback((id: MenuActionId) => {
+export function runAppCommand(id: MenuActionId): void {
     const ui = useUIStore.getState();
     const docs = useDocumentStore.getState();
     const history = useHistoryStore.getState();
@@ -36,11 +37,14 @@ export function useAppCommands(): AppCommands {
         void openImageAsDocument();
         break;
       case "file.openRecent":
-        // Recent-files list needs persistence; not implemented yet.
-        console.info(`[cmd] ${id} — recent files not implemented yet`);
+        ui.setHomeVisible(true);
         break;
       case "file.save":
+        void saveProject().catch(err => window.alert(`Save failed: ${err instanceof Error ? err.message : String(err)}`));
+        break;
       case "file.saveAs":
+        void saveProject(true).catch(err => window.alert(`Save failed: ${err instanceof Error ? err.message : String(err)}`));
+        break;
       case "file.export":
       case "file.exportAs":
         ui.openDialog("exportAs");
@@ -59,14 +63,31 @@ export function useAppCommands(): AppCommands {
       case "edit.redo":
         if (doc) history.redo(doc.id);
         break;
+      case "edit.transform":
+        if (doc?.activeLayerId) ui.setTransformVisible(true);
+        break;
       case "edit.cut":
       case "edit.copy":
       case "edit.paste":
-      case "edit.fill":
       case "edit.stroke":
       case "edit.prefs":
         console.info(`[cmd] ${id}`);
         break;
+      case "edit.fill": {
+        if (!doc?.activeLayerId || !engine) break;
+        const layer = doc.layers.find(l => l.id === doc.activeLayerId);
+        const surface = engine.getSurface(doc.activeLayerId);
+        if (!layer || layer.locked || !layer.visible || !surface) break;
+        const before = engine.captureSnapshot(layer.id);
+        if (!before) break;
+        const sel = selectionFor(doc.id) ?? { x: 0, y: 0, w: doc.width, h: doc.height };
+        const fg = useColorStore.getState().foreground;
+        surface.ctx.fillStyle = `rgba(${fg.r},${fg.g},${fg.b},${fg.a})`;
+        surface.ctx.fillRect(sel.x, sel.y, sel.w, sel.h);
+        engine.markDirty(layer.id);
+        commitRegionEdit(doc.id, layer.id, before, sel, "Fill with Foreground Color");
+        break;
+      }
 
       // ── Image ──────────────────────────────────────────────────────────
       case "image.canvasSize":
@@ -77,10 +98,7 @@ export function useAppCommands(): AppCommands {
         console.info(`[cmd] ${id} — Phase 2`);
         break;
       case "image.crop":
-        if (doc && engine) {
-          // Phase 1 behaviour: crop to the canvas (no-op) until the Crop tool ships.
-          console.info("[cmd] image.crop — Crop tool ships in Phase 1 step 2");
-        }
+        if (doc) { const sel = selectionFor(doc.id); if (sel) docs.cropDocument(doc.id, sel); }
         break;
 
       // ── Layer ──────────────────────────────────────────────────────────
@@ -168,7 +186,7 @@ export function useAppCommands(): AppCommands {
       case "window.workspace":
         break;
       case "window.toggleToolbar":
-        ui.togglePanel("properties");
+        ui.toggleToolbar();
         break;
       case "window.toggleRightDock":
         ui.toggleRightDock();
@@ -194,13 +212,16 @@ export function useAppCommands(): AppCommands {
         ui.openDialog("about");
         break;
       case "help.shortcuts":
+        ui.openDialog("shortcuts");
+        break;
       case "help.docs":
       case "help.aiModels":
       case "help.checkUpdates":
         console.info(`[cmd] ${id}`);
         break;
     }
-  }, []);
+}
 
-  return { run };
+export function useAppCommands(): AppCommands {
+  return { run: runAppCommand };
 }

@@ -44,7 +44,8 @@ export type ToolId =
   // Phase 4 — vector
   | "pen"
   | "path-select"
-  | "shape";
+  | "shape"
+  | "shape-ellipse";
 
 /** Coalesced pointer sample delivered to tools. */
 export interface ToolPointerEvent {

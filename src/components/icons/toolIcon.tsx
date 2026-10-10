@@ -26,6 +26,7 @@ import {
   History,
   Droplets,
   Square,
+  Circle,
   Redo2,
 } from "lucide-react";
 import type { ToolId } from "@/tools/types";
@@ -56,6 +57,7 @@ const map: Partial<Record<ToolId, ComponentType<{ className?: string; size?: num
   pen: PenTool,
   text: Type,
   "path-select": Redo2,
+  "shape-ellipse": Circle,
   shape: Square,
   hand: Hand,
   zoom: ZoomIn,

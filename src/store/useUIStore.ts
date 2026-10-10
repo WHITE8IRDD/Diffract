@@ -27,6 +27,8 @@ export interface PanelState {
 interface UIState {
   // ── Tools ──────────────────────────────────────────────────────────────
   activeToolId: ToolId;
+  transformVisible: boolean;
+  setTransformVisible: (visible: boolean) => void;
   toolOptions: ToolOptions;
   setActiveTool: (id: ToolId) => void;
   setBrushOptions: (patch: Partial<BrushToolOptions>, forEraser?: boolean) => void;
@@ -45,6 +47,8 @@ interface UIState {
 
   // ── Panels / dock ──────────────────────────────────────────────────────
   panels: Record<"layers" | "properties" | "history" | "color", PanelState>;
+  toolbarVisible: boolean;
+  toggleToolbar: () => void;
   rightDockVisible: boolean;
   statusBarVisible: boolean;
   togglePanel: (id: "layers" | "properties" | "history" | "color") => void;
@@ -59,6 +63,9 @@ interface UIState {
   setPanelsHidden: (hidden: boolean) => void;
 
   // ── Workspace ──────────────────────────────────────────────────────────
+  /** Home can be opened over existing documents without closing them. */
+  homeVisible: boolean;
+  setHomeVisible: (visible: boolean) => void;
   workspace: WorkspaceLayout;
   setWorkspace: (w: WorkspaceLayout) => void;
 
@@ -69,6 +76,7 @@ interface UIState {
     newDocument: boolean;
     exportAs: boolean;
     about: boolean;
+    shortcuts: boolean;
   };
   openDialog: (id: keyof UIState["dialogs"]) => void;
   closeDialog: (id: keyof UIState["dialogs"]) => void;
@@ -76,6 +84,8 @@ interface UIState {
 
 export const useUIStore = create<UIState>((set) => ({
   activeToolId: "move",
+  transformVisible: false,
+  setTransformVisible: (visible) => set({ transformVisible: visible }),
   toolOptions: DEFAULT_TOOL_OPTIONS,
   setActiveTool: (id) => set({ activeToolId: id }),
   setBrushOptions: (patch, forEraser = false) =>
@@ -115,6 +125,8 @@ export const useUIStore = create<UIState>((set) => ({
     history: { collapsed: true, visible: true },
     color: { collapsed: false, visible: true },
   },
+  toolbarVisible: true,
+  toggleToolbar: () => set(s => ({ toolbarVisible: !s.toolbarVisible })),
   rightDockVisible: true,
   statusBarVisible: true,
   togglePanel: (id) =>
@@ -133,12 +145,14 @@ export const useUIStore = create<UIState>((set) => ({
   panelsHidden: false,
   setPanelsHidden: (hidden) => set({ panelsHidden: hidden }),
 
+  homeVisible: false,
+  setHomeVisible: (visible) => set({ homeVisible: visible }),
   workspace: "essential",
   setWorkspace: (w) => set({ workspace: w }),
 
   openMenuId: null,
   setOpenMenuId: (id) => set({ openMenuId: id }),
-  dialogs: { newDocument: false, exportAs: false, about: false },
+  dialogs: { newDocument: false, exportAs: false, about: false, shortcuts: false },
   openDialog: (id) =>
     set((s) => ({ dialogs: { ...s.dialogs, [id]: true } })),
   closeDialog: (id) =>

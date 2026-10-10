@@ -20,6 +20,7 @@ pub fn run() {
             commands::export_image,
             commands::open_image,
             commands::read_text_file,
+            commands::write_text_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Diffract");

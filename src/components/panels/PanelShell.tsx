@@ -29,7 +29,7 @@ export function PanelShell({
   return (
     <section
       className={cn(
-        "flex flex-col rounded-lg border border-stroke-subtle bg-surface",
+        "flex flex-col rounded-[3px] border border-stroke-subtle bg-surface",
         className,
       )}
     >

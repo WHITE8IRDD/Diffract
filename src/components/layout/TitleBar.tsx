@@ -1,125 +1,61 @@
-/**
- * TitleBar — Windows 11 caption strip.
- *
- * Runs under the menu bar (Photoshop ordering) and carries the document
- * identity plus native window controls. In the Tauri build the traffic-light
- * buttons call `window.*` commands from `@tauri-apps/api/window`; in the
- * browser preview they degrade to decorative affordances.
- */
-
+/** PhotoCraft-style single-row menu / document title / desktop caption. */
 import { useEffect, useState } from "react";
 import { Minus, Square, X, Copy } from "lucide-react";
-import { Logo } from "@/components/icons/Logo";
+import { MenuBar } from "./MenuBar";
 import { useDocumentStore } from "@/store/useDocumentStore";
 import { isTauri } from "@/hooks/useTauri";
 import { cn } from "@/utils/cn";
 
 export function TitleBar() {
-  // Select the stored document (stable reference), not a fresh object literal —
-  // a new object per call makes the subscription loop forever (error #185).
-  const activeDoc = useDocumentStore(
-    (s) => s.documents.find((x) => x.id === s.activeDocumentId) ?? null,
-  );
-  const doc = activeDoc ? { name: activeDoc.name, dirty: activeDoc.dirty } : null;
+  const activeDoc = useDocumentStore(s => s.documents.find(x => x.id === s.activeDocumentId) ?? null);
   const [maximized, setMaximized] = useState(false);
+  const native = isTauri();
 
-  // Tauri: real window controls.
-  const windowApi = isTauri();
   useEffect(() => {
-    if (!windowApi) return;
+    if (!native) return;
     void (async () => {
       try {
         const { getCurrentWindow } = await import("@tauri-apps/api/window");
-        const win = getCurrentWindow();
-        setMaximized(await win.isMaximized());
-      } catch {
-        /* preview environment */
-      }
+        setMaximized(await getCurrentWindow().isMaximized());
+      } catch { /* unavailable in browser preview */ }
     })();
-  }, [windowApi]);
+  }, [native]);
 
-  const call = async (
-    fn: "minimize" | "toggleMaximize" | "close",
-  ): Promise<void> => {
-    if (!windowApi) return;
+  const call = async (fn: "minimize" | "toggleMaximize" | "close") => {
+    if (!native) return;
     try {
       const { getCurrentWindow } = await import("@tauri-apps/api/window");
       const win = getCurrentWindow();
       if (fn === "minimize") await win.minimize();
-      else if (fn === "toggleMaximize") {
-        await win.toggleMaximize();
-        setMaximized(await win.isMaximized());
-      } else await win.close();
-    } catch {
-      /* preview environment */
-    }
+      else if (fn === "toggleMaximize") { await win.toggleMaximize(); setMaximized(await win.isMaximized()); }
+      else await win.close();
+    } catch (error) { console.error("Window action failed", error); }
   };
 
-  return (
-    <div
-      data-tauri-drag-region
-      className="flex h-[32px] shrink-0 select-none items-center gap-2 border-b border-stroke-subtle bg-surface pl-2 pr-0"
-    >
-      <Logo size={18} compact />
-      <span className="text-[12px] font-semibold text-foreground">Diffract</span>
-      <span className="text-foreground-disabled">—</span>
-      <span className="text-[12px] text-foreground-secondary">
-        {doc ? (
-          <>
-            {doc.dirty && <span className="text-warning">● </span>}
-            {doc.name}
-          </>
-        ) : (
-          <span className="text-foreground-disabled">No document</span>
-        )}
-      </span>
-
-      {/* Window controls */}
-      <div className="ml-auto flex h-full items-stretch">
-        <CaptionButton label="Minimize" onClick={() => void call("minimize")}>
-          <Minus className="h-3.5 w-3.5" />
-        </CaptionButton>
-        <CaptionButton
-          label={maximized ? "Restore" : "Maximize"}
-          onClick={() => void call("toggleMaximize")}
-        >
-          {maximized ? <Copy className="h-3 w-3" /> : <Square className="h-3 w-3" />}
-        </CaptionButton>
-        <CaptionButton
-          label="Close"
-          onClick={() => void call("close")}
-          danger
-        >
-          <X className="h-3.5 w-3.5" />
-        </CaptionButton>
-      </div>
+  return <header data-tauri-drag-region className="relative flex h-[34px] shrink-0 items-center border-b border-stroke-subtle bg-surface px-1">
+    <MenuBar compact />
+    <div className="pointer-events-none absolute inset-x-[380px] hidden truncate text-center text-[11px] text-foreground-tertiary lg:block">
+      {activeDoc ? <>{activeDoc.name}{activeDoc.dirty && <span className="ml-1 text-foreground-disabled">•</span>}</> : "Diffract"}
     </div>
-  );
+    <div className="ml-auto flex h-full items-center gap-1">
+      <span className="mr-3 hidden text-[10px] tracking-[0.02em] text-foreground-disabled md:inline">ESSENTIALS</span>
+      {native && <div className="flex h-full items-stretch">
+        <CaptionButton label="Minimize" onClick={() => void call("minimize")}><Minus size={13} /></CaptionButton>
+        <CaptionButton label={maximized ? "Restore" : "Maximize"} onClick={() => void call("toggleMaximize")}>
+          {maximized ? <Copy size={12} /> : <Square size={12} />}
+        </CaptionButton>
+        <CaptionButton label="Close" onClick={() => void call("close")} danger><X size={14} /></CaptionButton>
+      </div>}
+    </div>
+  </header>;
 }
 
-function CaptionButton({
-  children,
-  label,
-  onClick,
-  danger = false,
-}: {
-  children: React.ReactNode;
-  label: string;
-  onClick: () => void;
-  danger?: boolean;
+function CaptionButton({ children, label, onClick, danger = false }: {
+  children: React.ReactNode; label: string; onClick: () => void; danger?: boolean;
 }) {
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      onClick={onClick}
-      className={cn(
-        "flex w-[46px] items-center justify-center text-foreground-secondary transition-colors",
-        danger ? "hover:bg-destructive hover:text-white" : "hover:bg-surface-hover",
-      )}
-    >
-      {children}
-    </button>
-  );
+  return <button type="button" aria-label={label} title={label} onClick={onClick}
+    className={cn("flex w-[42px] items-center justify-center text-foreground-secondary transition-colors",
+      danger ? "hover:bg-destructive hover:text-white" : "hover:bg-surface-hover")}>
+    {children}
+  </button>;
 }

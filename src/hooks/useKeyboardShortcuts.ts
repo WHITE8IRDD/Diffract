@@ -1,144 +1,62 @@
-/**
- * Global keyboard shortcuts (Photoshop defaults — see `utils/shortcuts`).
- *
- * Installed once at the app root. Ignores keystrokes typed into inputs so
- * text fields keep their native behaviour.
- */
-
-import { openImageAsDocument } from "@/io/openImage";
+/** Photoshop-style keys share the same command dispatcher as the menu. */
 import { useEffect } from "react";
 import { matchShortcut, readModifiers, type ShortcutAction } from "@/utils/shortcuts";
 import type { ToolId } from "@/tools/types";
+import { getTool, PlaceholderTool } from "@/tools/ToolRegistry";
+import type { MenuActionId } from "@/components/layout/menuData";
+import { runAppCommand } from "./useAppCommands";
+import { useColorStore } from "@/store/useColorStore";
 import { useUIStore } from "@/store/useUIStore";
 import { useDocumentStore } from "@/store/useDocumentStore";
-import { useHistoryStore } from "@/store/useHistoryStore";
-import { useSelectionStore } from "@/store/useSelectionStore";
-import { getEngine } from "@/engine/registry";
+import { selectionFor, useSelectionStore } from "@/store/useSelectionStore";
 
 const TOOL_IDS = new Set<string>([
   "move", "marquee-rect", "marquee-ellipse", "lasso", "polygon-lasso", "brush",
   "eraser", "paint-bucket", "gradient", "crop", "eyedropper", "text", "zoom",
   "hand", "magic-wand", "quick-selection", "healing", "clone-stamp", "patch",
-  "red-eye", "history-brush", "dodge", "burn", "sponge", "pen", "path-select", "shape",
+  "red-eye", "history-brush", "dodge", "burn", "sponge", "pen", "path-select", "shape", "shape-ellipse",
 ]);
-
 function isTypingTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  return (
-    target instanceof HTMLInputElement ||
-    target instanceof HTMLTextAreaElement ||
-    target.isContentEditable
-  );
+  return target instanceof HTMLElement && !!target.closest("input, textarea, [contenteditable=true]");
 }
 
 export function useKeyboardShortcuts(): void {
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (isTypingTarget(e.target)) return;
-      const mods = readModifiers(e);
-      const binding = matchShortcut(e, mods);
+      const ui = useUIStore.getState();
+      const doc = useDocumentStore.getState().activeDocument();
+      if (e.key === "Escape" && doc) {
+        useSelectionStore.getState().setSelection(doc.id, null);
+        return;
+      }
+      if (e.key === "Enter" && ui.activeToolId === "crop" && !ui.transformVisible && doc) {
+        const sel = selectionFor(doc.id);
+        if (sel) { e.preventDefault(); useDocumentStore.getState().cropDocument(doc.id, sel); }
+        return;
+      }
+      if (!e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+        if (e.key.toLowerCase() === "x") { e.preventDefault(); useColorStore.getState().swap(); return; }
+        if (e.key.toLowerCase() === "d") { e.preventDefault(); useColorStore.getState().resetDefaults(); return; }
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === "Tab") {
+        const docs = useDocumentStore.getState();
+        const index = docs.documents.findIndex(d => d.id === docs.activeDocumentId);
+        const next = docs.documents[(index + (e.shiftKey ? docs.documents.length - 1 : 1)) % docs.documents.length];
+        if (next) { e.preventDefault(); docs.setActiveDocument(next.id); }
+        return;
+      }
+      const binding = matchShortcut(e, readModifiers(e));
       if (!binding) return;
-
+      const action = binding.action as ShortcutAction | ToolId;
+      if (TOOL_IDS.has(action) && getTool(action as ToolId) instanceof PlaceholderTool) return;
       e.preventDefault();
       e.stopPropagation();
-      dispatch(binding.action);
+      if (TOOL_IDS.has(action)) ui.setActiveTool(action as ToolId);
+      else if (action === "window.togglePanels") ui.setPanelsHidden(!ui.panelsHidden);
+      else runAppCommand(action as MenuActionId);
     };
     window.addEventListener("keydown", onKeyDown, { capture: true });
     return () => window.removeEventListener("keydown", onKeyDown, { capture: true });
   }, []);
-}
-
-function dispatch(action: ShortcutAction | ToolId): void {
-  const ui = useUIStore.getState();
-  const docs = useDocumentStore.getState();
-  const history = useHistoryStore.getState();
-  const doc = docs.activeDocument();
-  const engine = getEngine();
-
-  // Tool selection.
-  if (TOOL_IDS.has(action)) {
-    ui.setActiveTool(action as ToolId);
-    return;
-  }
-
-  switch (action) {
-    case "file.new":
-      ui.openDialog("newDocument");
-      break;
-    case "file.open":
-      void openImageAsDocument();
-      break;
-    case "file.save":
-    case "file.saveAs":
-    case "file.export":
-      ui.openDialog("exportAs");
-      break;
-
-    case "edit.undo":
-      if (doc) history.undo(doc.id);
-      break;
-    case "edit.redo":
-      if (doc) history.redo(doc.id);
-      break;
-    case "edit.fill":
-      console.info("[shortcut] edit.fill — flood fill lands with the Paint Bucket tool");
-      break;
-
-    case "image.canvasSize":
-      console.info("[shortcut] image.canvasSize");
-      break;
-
-    case "layer.new":
-      if (doc) docs.addLayer(doc.id);
-      break;
-    case "layer.duplicate":
-      if (doc?.activeLayerId) docs.duplicateLayer(doc.id, doc.activeLayerId);
-      break;
-    case "layer.delete":
-      if (doc?.activeLayerId) docs.deleteLayer(doc.id, doc.activeLayerId);
-      break;
-    case "layer.mergeDown":
-      console.info("[shortcut] layer.mergeDown");
-      break;
-
-    case "select.all":
-    case "select.deselect": {
-      const doc = useDocumentStore.getState().activeDocument();
-      if (!doc) break;
-      useSelectionStore.getState().setSelection(
-        doc.id,
-        action === "select.all" ? { x: 0, y: 0, w: doc.width, h: doc.height } : null,
-      );
-      break;
-    }
-    case "select.inverse":
-      console.info(`[shortcut] ${action} — not implemented yet`);
-      break;
-
-    case "view.zoomIn":
-      engine?.zoomBy(1.25);
-      break;
-    case "view.zoomOut":
-      engine?.zoomBy(1 / 1.25);
-      break;
-    case "view.zoomFit":
-      engine?.fitToScreen();
-      break;
-    case "view.zoomActual":
-      engine?.setZoom(1);
-      break;
-    case "view.toggleRulers":
-      if (doc) docs.setView(doc.id, { showRulers: !doc.view.showRulers });
-      break;
-    case "view.toggleGrid":
-      if (doc) docs.setView(doc.id, { showGrid: !doc.view.showGrid });
-      break;
-
-    case "window.togglePanels":
-      ui.setPanelsHidden(!ui.panelsHidden);
-      break;
-    case "window.toggleStatusBar":
-      ui.toggleStatusBar();
-      break;
-  }
 }
