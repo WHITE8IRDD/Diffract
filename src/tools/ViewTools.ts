@@ -5,7 +5,6 @@
 
 import type { Tool, ToolPointerEvent } from "./types";
 import type { Point } from "@/utils/math";
-import { clamp } from "@/utils/math";
 import { getEngine } from "@/engine/registry";
 import { useColorStore } from "@/store/useColorStore";
 
@@ -77,19 +76,10 @@ export class EyedropperTool implements Tool {
   private sample(e: ToolPointerEvent): void {
     const engine = getEngine();
     const docId = documentIdForSample();
-    const doc = docId ? engine?.compositeToCanvas(docId) : null;
-    if (!doc) return;
-    const ctx = doc.getContext("2d", { willReadFrequently: true });
-    if (!ctx) return;
-    const x = Math.round(clamp(e.doc.x, 0, doc.width - 1));
-    const y = Math.round(clamp(e.doc.y, 0, doc.height - 1));
-    const px = ctx.getImageData(x, y, 1, 1).data;
-    useColorStore.getState().setForeground({
-      r: px[0]!,
-      g: px[1]!,
-      b: px[2]!,
-      a: (px[3] ?? 255) / 255,
-    });
+    if (!engine || !docId) return;
+    // Only the sampled pixel is composited — never the whole document.
+    const color = engine.sampleComposite(docId, e.doc.x, e.doc.y);
+    if (color) useColorStore.getState().setForeground(color);
   }
 }
 

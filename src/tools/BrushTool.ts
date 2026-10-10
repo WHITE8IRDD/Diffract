@@ -13,7 +13,7 @@ import { useDocumentStore } from "@/store/useDocumentStore";
 import { useColorStore } from "@/store/useColorStore";
 import { useUIStore } from "@/store/useUIStore";
 import { useHistoryStore } from "@/store/useHistoryStore";
-import type { PixelSnapshot } from "@/engine/types";
+import { expandRect, sliceSnapshot, type PixelRect, type PixelSnapshot } from "@/engine/snapshot";
 import type { Point } from "@/utils/math";
 
 export class BrushTool implements Tool {
@@ -25,8 +25,11 @@ export class BrushTool implements Tool {
   private painting = false;
   private last: Point | null = null;
   private lastStamp: Point | null = null;
+  /** Full-layer capture taken at stroke start (transient; cut down on release). */
   private strokeBefore: PixelSnapshot | null = null;
   private strokeLayerId: string | null = null;
+  /** Bounds of everything the stroke has touched so far. */
+  private strokeBounds: PixelRect | null = null;
 
   constructor(id: ToolId = "brush", erase = false) {
     this.id = id;
@@ -51,6 +54,7 @@ export class BrushTool implements Tool {
     this.painting = true;
     this.strokeLayerId = layerId;
     this.strokeBefore = engine.captureSnapshot(layerId);
+    this.strokeBounds = null;
     this.last = { x: e.doc.x, y: e.doc.y };
     this.lastStamp = null;
 
@@ -79,18 +83,23 @@ export class BrushTool implements Tool {
     const doc = useDocumentStore.getState().activeDocument();
     const layerId = this.strokeLayerId;
     const before = this.strokeBefore;
+    const bounds = this.strokeBounds;
     this.strokeLayerId = null;
     this.strokeBefore = null;
+    this.strokeBounds = null;
 
-    if (!engine || !doc || !layerId || !before) return;
+    if (!engine || !doc || !layerId || !before || !bounds) return;
 
-    const after = engine.captureSnapshot(layerId);
-    if (!after) return;
+    // Only the area the stroke touched goes into history — a few KB instead
+    // of a full-layer copy per stroke.
+    const beforeSlice = sliceSnapshot(before, bounds);
+    const after = engine.captureSnapshot(layerId, bounds);
+    if (!beforeSlice || !after) return;
 
     const label = this.erase ? "Eraser" : "Brush Stroke";
     useHistoryStore.getState().push(doc.id, {
       label,
-      undo: () => engine.restoreSnapshot(layerId, before),
+      undo: () => engine.restoreSnapshot(layerId, beforeSlice),
       redo: () => engine.restoreSnapshot(layerId, after),
     });
     useDocumentStore.getState().setDocumentDirty(doc.id, true);
@@ -106,14 +115,18 @@ export class BrushTool implements Tool {
     this.lastStamp = null;
     this.strokeBefore = null;
     this.strokeLayerId = null;
+    this.strokeBounds = null;
   }
 
   private stampTo(p: Point): void {
     const engine = getEngine();
     const surface = this.strokeLayerId ? engine?.getSurface(this.strokeLayerId) : null;
     if (!engine || !surface) return;
+    const opts = this.options();
     const color = useColorStore.getState().foreground;
-    stampDab(surface.ctx, p, this.options(), color, this.erase);
+    stampDab(surface.ctx, p, opts, color, this.erase);
+    // Track the touched area (dab radius + 2px for antialiasing).
+    this.strokeBounds = expandRect(this.strokeBounds, p.x, p.y, opts.size / 2 + 2);
     this.lastStamp = p;
     engine.markDirty(surface.id);
   }
