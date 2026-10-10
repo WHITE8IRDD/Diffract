@@ -115,6 +115,15 @@ export const tauriApi = {
     );
   },
 
+  /**
+   * Decode an image on the Rust side. Resolves to the raw payload: an 8-byte
+   * header (u32 width, u32 height, little-endian) followed by RGBA8 pixels.
+   */
+  async openImageRaw(path: string): Promise<ArrayBuffer> {
+    const { invoke } = await import("@tauri-apps/api/core");
+    return invoke<ArrayBuffer>("open_image", { path });
+  },
+
   /** Read a UTF-8 text file from disk (Tauri only). */
   async readTextFile(path: string): Promise<string | null> {
     return nativeOr<string | null>("read_text_file", { path }, () => null);

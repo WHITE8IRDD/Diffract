@@ -71,6 +71,8 @@ interface DocRoot {
   surfaces: Map<string, RasterSurface>;
   width: number;
   height: number;
+  /** Dashed selection outline (drawn above layers). */
+  selection: Graphics | null;
 }
 
 export interface EngineEvents {
@@ -342,6 +344,25 @@ export class PixiEngine {
     this.requestRender();
   }
 
+  /** Draw (or clear, with `null`) the marching-ants selection outline. */
+  setSelectionOverlay(docId: string, rect: PixelRect | null): void {
+    const root = this.docs.get(docId);
+    if (!root) return;
+    if (!root.selection) {
+      root.selection = new Graphics();
+      root.container.addChild(root.selection);
+    }
+    const g = root.selection;
+    g.clear();
+    if (rect && rect.w > 0 && rect.h > 0) {
+      const line = 1 / this.zoom; // stays 1 screen pixel wide at 100 %
+      // Dashed outline: white dashes over a dark base so it reads on any pixels.
+      strokeDashedRect(g, rect, 6 / this.zoom, { width: line * 2, color: 0x000000, alpha: 0.55 });
+      strokeDashedRect(g, rect, 6 / this.zoom, { width: line, color: 0xffffff, alpha: 0.95 });
+    }
+    this.requestRender();
+  }
+
   // ── sync from the document store ───────────────────────────────────────
 
   /**
@@ -566,6 +587,7 @@ export class PixiEngine {
       surfaces: new Map(),
       width: doc.width,
       height: doc.height,
+      selection: null,
     };
     this.docs.set(doc.id, root);
     container.visible = doc.id === this.activeDocId;
@@ -632,6 +654,36 @@ export class PixiEngine {
     this.checkerTile = Texture.from(tile);
     return this.checkerTile;
   }
+}
+
+/** Dashed rectangle outline (Pixi Graphics has no dash style). */
+function strokeDashedRect(
+  g: Graphics,
+  r: PixelRect,
+  dash: number,
+  style: { width: number; color: number; alpha: number },
+): void {
+  const x0 = r.x;
+  const y0 = r.y;
+  const x1 = r.x + r.w;
+  const y1 = r.y + r.h;
+  const edges: [number, number, number, number][] = [
+    [x0, y0, x1, y0],
+    [x1, y0, x1, y1],
+    [x1, y1, x0, y1],
+    [x0, y1, x0, y0],
+  ];
+  for (const [ax, ay, bx, by] of edges) {
+    const len = Math.hypot(bx - ax, by - ay);
+    if (len === 0) continue;
+    const ux = (bx - ax) / len;
+    const uy = (by - ay) / len;
+    for (let d = 0; d < len; d += dash * 2) {
+      const e = Math.min(d + dash, len);
+      g.moveTo(ax + ux * d, ay + uy * d).lineTo(ax + ux * e, ay + uy * e);
+    }
+  }
+  g.stroke(style);
 }
 
 // ---------------------------------------------------------------------------

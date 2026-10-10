@@ -76,6 +76,8 @@ export interface NewDocumentOptions {
   colorMode: ColorMode;
   /** Fill of the initial background layer. */
   background: "white" | "transparent";
+  /** Optional RGBA8 pixels (opened images) written into the background layer. */
+  pixels?: Uint8ClampedArray<ArrayBuffer>;
 }
 
 export const DEFAULT_VIEW: ViewState = {

@@ -131,7 +131,22 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
       activeDocumentId: docId,
     }));
     // Seed the raster surface in the engine (white or transparent).
-    getEngine()?.createLayerSurface(doc, bgId, opts.background);
+    const engine = getEngine();
+    engine?.createLayerSurface(doc, bgId, opts.background);
+    if (engine && opts.pixels) {
+      const surface = engine.getSurface(bgId);
+      if (surface) {
+        surface.ctx.putImageData(
+          new ImageData(opts.pixels, doc.width, doc.height),
+          0,
+          0,
+        );
+        engine.markDirty(bgId);
+      }
+    }
+    // The view-switch fit ran before this document's surface existed, so fit
+    // explicitly now that the document is on the canvas.
+    engine?.fitToScreen();
     useHistoryStore.getState().push(docId, {
       label: "New Document",
       undo: () => {},

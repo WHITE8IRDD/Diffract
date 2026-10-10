@@ -5,12 +5,14 @@
  * text fields keep their native behaviour.
  */
 
+import { openImageAsDocument } from "@/io/openImage";
 import { useEffect } from "react";
 import { matchShortcut, readModifiers, type ShortcutAction } from "@/utils/shortcuts";
 import type { ToolId } from "@/tools/types";
 import { useUIStore } from "@/store/useUIStore";
 import { useDocumentStore } from "@/store/useDocumentStore";
 import { useHistoryStore } from "@/store/useHistoryStore";
+import { useSelectionStore } from "@/store/useSelectionStore";
 import { getEngine } from "@/engine/registry";
 
 const TOOL_IDS = new Set<string>([
@@ -64,8 +66,7 @@ function dispatch(action: ShortcutAction | ToolId): void {
       ui.openDialog("newDocument");
       break;
     case "file.open":
-      // Wired to the native dialog in Phase 1 step 2 (File ▸ Open).
-      console.info("[shortcut] file.open — native dialog coming online with Rust file I/O");
+      void openImageAsDocument();
       break;
     case "file.save":
     case "file.saveAs":
@@ -101,9 +102,17 @@ function dispatch(action: ShortcutAction | ToolId): void {
       break;
 
     case "select.all":
-    case "select.deselect":
+    case "select.deselect": {
+      const doc = useDocumentStore.getState().activeDocument();
+      if (!doc) break;
+      useSelectionStore.getState().setSelection(
+        doc.id,
+        action === "select.all" ? { x: 0, y: 0, w: doc.width, h: doc.height } : null,
+      );
+      break;
+    }
     case "select.inverse":
-      console.info(`[shortcut] ${action}`);
+      console.info(`[shortcut] ${action} — not implemented yet`);
       break;
 
     case "view.zoomIn":

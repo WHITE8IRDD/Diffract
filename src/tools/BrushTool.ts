@@ -8,6 +8,7 @@
 
 import type { BrushToolOptions, Tool, ToolId, ToolPointerEvent } from "./types";
 import { stampDab, strokePoints } from "./base";
+import { activeDocId, clipToSelection } from "./region";
 import { getEngine } from "@/engine/registry";
 import { useDocumentStore } from "@/store/useDocumentStore";
 import { useColorStore } from "@/store/useColorStore";
@@ -124,7 +125,12 @@ export class BrushTool implements Tool {
     if (!engine || !surface) return;
     const opts = this.options();
     const color = useColorStore.getState().foreground;
-    stampDab(surface.ctx, p, opts, color, this.erase);
+    const ctx = surface.ctx;
+    ctx.save();
+    const docId = activeDocId();
+    if (docId) clipToSelection(ctx, docId, surface.width, surface.height);
+    stampDab(ctx, p, opts, color, this.erase);
+    ctx.restore();
     // Track the touched area (dab radius + 2px for antialiasing).
     this.strokeBounds = expandRect(this.strokeBounds, p.x, p.y, opts.size / 2 + 2);
     this.lastStamp = p;
